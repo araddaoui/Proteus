@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // User profiles: users can read their own profile; users can only write their own profile
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId);
+      allow write: if isSignedIn() && request.auth.uid == userId && isValidId(userId);
+    }
+
+    // Institutions: Read accessible to signed in users; writes restricted to valid IDs
+    match /institutions/{institutionId} {
+      allow read: if isSignedIn() && isValidId(institutionId);
+      allow write: if isSignedIn() && isValidId(institutionId);
+
+      match /decisions/{decisionId} {
+        allow read: if isSignedIn() && isValidId(decisionId);
+        allow write: if isSignedIn() && isValidId(decisionId);
+      }
+
+      match /evidence/{evidenceId} {
+        allow read: if isSignedIn() && isValidId(evidenceId);
+        allow write: if isSignedIn() && isValidId(evidenceId);
+      }
+
+      match /auditLogs/{logId} {
+        allow read: if isSignedIn() && isValidId(logId);
+        allow create: if isSignedIn() && isValidId(logId);
+        allow update, delete: if false; // Immutable audit trail
+      }
+    }
+  }
+}

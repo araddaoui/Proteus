@@ -1,0 +1,122 @@
+{
+  "entities": {
+    "Institution": {
+      "title": "Institution",
+      "description": "Higher education institution profile with governance body configurations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 256 },
+        "shortName": { "type": "string", "maxLength": 64 },
+        "missionStatement": { "type": "string", "maxLength": 1000 },
+        "governanceType": { "type": "string", "enum": ["public", "private_nonprofit", "private_forprofit", "religious"] },
+        "academicGovernanceType": { "type": "string", "enum": ["faculty_senate", "scientific_council", "academic_board", "none"] },
+        "academicGovernanceBodyName": { "type": "string", "maxLength": 256 },
+        "provostOfficeName": { "type": "string", "maxLength": 256 },
+        "accreditors": { "type": "array" },
+        "legalJurisdiction": { "type": "string", "maxLength": 256 },
+        "budgetTier": { "type": "string", "maxLength": 128 },
+        "enrollmentSize": { "type": "number" },
+        "currentAiPolicyStatus": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "governanceType", "academicGovernanceType", "academicGovernanceBodyName", "provostOfficeName"]
+    },
+    "DecisionRecord": {
+      "title": "DecisionRecord",
+      "description": "Strategic AI initiative decision record subject to dual-governance approval",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "tenantId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 256 },
+        "summary": { "type": "string", "maxLength": 2000 },
+        "domain": { "type": "string", "maxLength": 128 },
+        "touchesEnrollmentOrGrading": { "type": "boolean" },
+        "humanApprovalGatePassed": { "type": "boolean" },
+        "humanDisposition": { "type": "string" },
+        "dispositionNotes": { "type": "string", "maxLength": 2000 },
+        "dispositionSetBy": { "type": "string", "maxLength": 256 },
+        "dispositionSetAt": { "type": "string" },
+        "implementationStatus": { "type": "string", "enum": ["proposed", "under_review", "pilot_sandboxed", "implemented", "rejected", "decommissioned"] },
+        "isAiDrafted": { "type": "boolean" },
+        "kernelSectionIds": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "tenantId", "title", "summary", "domain", "implementationStatus"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with role entitlement and institution affiliation",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "displayName": { "type": "string", "maxLength": 256 },
+        "tenantId": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["high_admin", "program_director", "student"] },
+        "title": { "type": "string", "maxLength": 256 },
+        "governingBodyAffiliation": { "type": "string", "maxLength": 256 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "displayName", "tenantId", "role"]
+    },
+    "EvidenceClaim": {
+      "title": "EvidenceClaim",
+      "description": "Verified evidence item with source URL integrity",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "tenantId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 256 },
+        "claimText": { "type": "string", "maxLength": 3000 },
+        "sourceUrl": { "type": "string", "maxLength": 1000 },
+        "sourceType": { "type": "string", "maxLength": 64 },
+        "dateAdded": { "type": "string" }
+      },
+      "required": ["id", "tenantId", "title", "claimText", "sourceUrl"]
+    },
+    "AuditLogEntry": {
+      "title": "AuditLogEntry",
+      "description": "Tamper-evident governance action log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "tenantId": { "type": "string", "maxLength": 128 },
+        "action": { "type": "string", "maxLength": 128 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userRole": { "type": "string", "maxLength": 64 },
+        "userName": { "type": "string", "maxLength": 256 },
+        "details": { "type": "string", "maxLength": 2000 },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "tenantId", "action", "userId", "userRole", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/institutions/{institutionId}": {
+      "schema": "Institution",
+      "description": "Collection of university and college organizational profiles"
+    },
+    "/institutions/{institutionId}/decisions/{decisionId}": {
+      "schema": "DecisionRecord",
+      "description": "Collection of AI strategic decisions belonging to an institution"
+    },
+    "/institutions/{institutionId}/evidence/{evidenceId}": {
+      "schema": "EvidenceClaim",
+      "description": "Collection of verified empirical evidence claims"
+    },
+    "/institutions/{institutionId}/auditLogs/{logId}": {
+      "schema": "AuditLogEntry",
+      "description": "Immutable audit trail of governance actions"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Authenticated user profiles with assigned governance role"
+    }
+  }
+}
