@@ -14,6 +14,6 @@ Proteus is an institutional governance, scenario modeling, and strategic decisio
 - **Firebase Persistent Storage & Firestore Rules**: Scalable cloud database backing with security rules.
 
 ## Tech Stack
-- **Frontend**: React 18, TypeScript, Tailwind CSS, Lucide Icons
+- **Frontend**: React 19, TypeScript, Tailwind CSS, Lucide Icons
 - **Backend / API**: Express, Node.js
 - **Database & Auth**: Firebase Firestore & Firebase Auth
