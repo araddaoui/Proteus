@@ -18,6 +18,7 @@ import {
   Users,
   Printer,
   ChevronDown,
+  Cpu,
 } from 'lucide-react';
 import { AuditDossierModal } from './AuditDossierModal';
 
@@ -32,6 +33,7 @@ interface ScenarioEngineViewProps {
   onToggleGate: (id: string, passed: boolean) => void;
   onGenerateAiScenarios: (decision: DecisionRecord) => Promise<void>;
   onAddDecision: (decision: Omit<DecisionRecord, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  aiEnabled: boolean;
   onUpdateGovernanceSignoff?: (
     id: string,
     signoffType: 'academic' | 'administrative',
@@ -52,6 +54,7 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
   onToggleGate,
   onGenerateAiScenarios,
   onAddDecision,
+  aiEnabled,
   onUpdateGovernanceSignoff,
 }) => {
   const [selectedDecisionId, setSelectedDecisionId] = useState<string>(decisions[0]?.id || '');
@@ -186,7 +189,8 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
       humanDisposition: null,
       recommendedAction: null,
       implementationStatus: 'under_review',
-      isAiDrafted: true,
+      isAiDrafted: aiEnabled,
+      generationMode: aiEnabled ? 'ai' : 'deterministic',
       kernelSectionIds: ['II', 'V', 'VIII', 'XVI', 'XXX'],
       academicSignoff: {
         signoffType: 'academic',
@@ -773,6 +777,17 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
                   <p className="text-xs text-slate-500">
                     Non-technological drivers (demographics, economics, policy, geopolitics) explicitly required per scenario.
                   </p>
+                  <div className="mt-2">
+                    {aiEnabled ? (
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border bg-violet-50 text-violet-700 border-violet-200">
+                        <Sparkles className="w-3 h-3" /> AI-Assisted Mode
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border bg-slate-100 text-slate-600 border-slate-200">
+                        <Cpu className="w-3 h-3" /> Deterministic Mode — no external AI
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {canEdit && (
@@ -781,8 +796,16 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
                     disabled={isGeneratingAi}
                     className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3.5 py-2 rounded-xl transition-colors flex items-center gap-1.5 font-bold disabled:opacity-50 shadow-sm"
                   >
-                    <Sparkles className="w-4 h-4 text-indigo-200" />
-                    {isGeneratingAi ? 'Synthesizing Scenarios...' : 'Draft 5 Scenarios (AI Assist)'}
+                    {aiEnabled ? (
+                      <Sparkles className="w-4 h-4 text-indigo-200" />
+                    ) : (
+                      <Cpu className="w-4 h-4 text-indigo-200" />
+                    )}
+                    {isGeneratingAi
+                      ? 'Synthesizing Scenarios...'
+                      : aiEnabled
+                        ? 'Draft 5 Scenarios (AI Assist)'
+                        : 'Draft 5 Scenarios (Deterministic)'}
                   </button>
                 )}
               </div>
@@ -800,7 +823,7 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
                       disabled={isGeneratingAi}
                       className="bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 text-xs px-4 py-2 rounded-xl font-bold"
                     >
-                      Draft Scenarios Now
+                      {aiEnabled ? 'Draft Scenarios Now' : 'Draft Scenarios (Deterministic)'}
                     </button>
                   )}
                 </div>
@@ -808,6 +831,7 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {decisionScenarios.map((scen) => {
                     const style = getScenarioTypeStyle(scen.scenarioType);
+                    const isAiScenario = scen.generationMode ? scen.generationMode === 'ai' : scen.isAiDrafted;
 
                     return (
                       <div
@@ -824,7 +848,18 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
                         </div>
 
                         <div>
-                          <h4 className={`text-sm font-bold font-serif ${style.text}`}>{scen.title}</h4>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className={`text-sm font-bold font-serif ${style.text}`}>{scen.title}</h4>
+                            {isAiScenario ? (
+                              <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border bg-violet-50 text-violet-700 border-violet-200">
+                                AI-Drafted
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border bg-slate-100 text-slate-600 border-slate-200">
+                                Deterministic Template
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-slate-600 mt-1 leading-relaxed">{scen.description}</p>
                         </div>
 

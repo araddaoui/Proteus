@@ -9,9 +9,16 @@ const PORT = 3000;
 
 app.use(express.json());
 
+// AI is OFF by default. It only activates when ENABLE_AI === 'true' AND a key is
+// present. This guarantees a fully deterministic, key-free mode out of the box.
+function isAiEnabled(): boolean {
+  return process.env.ENABLE_AI === 'true' && !!process.env.GEMINI_API_KEY;
+}
+
 // Initialize GenAI lazily
 let genAI: GoogleGenAI | null = null;
 function getAI(): GoogleGenAI | null {
+  if (!isAiEnabled()) return null;
   if (!genAI && process.env.GEMINI_API_KEY) {
     genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   }
@@ -43,6 +50,17 @@ app.get('/api/kernel', (req, res) => {
   const kernel = getActiveKernel();
   const history = getKernelVersionHistory();
   res.json({ kernel, versionHistory: history });
+});
+
+// Runtime mode configuration. Deterministic (key-free) is the default; the client
+// reads this so the UI can honestly report whether AI is actually in play.
+app.get('/api/config', (req, res) => {
+  const aiEnabled = isAiEnabled();
+  res.json({
+    aiEnabled,
+    mode: aiEnabled ? 'ai_assisted' : 'deterministic',
+    llmProvider: aiEnabled ? 'google-gemini' : null
+  });
 });
 
 app.get('/api/compass/principles', (req, res) => {
@@ -368,87 +386,99 @@ app.post('/api/jobs/:jobId/run', (req, res) => {
   }
 });
 
-// 10. AI Generation Endpoints (Gemini API with fallback)
+// 10. Scenario Generation Endpoints
+// Deterministic by default (no external calls); AI-assisted only when ENABLE_AI=true
+// and GEMINI_API_KEY are both set.
+function buildDeterministicScenarios(decisionTitle: string) {
+  return [
+    {
+      scenarioType: 'conservative',
+      title: `[Deterministic] Minimal Pilot: ${decisionTitle}`,
+      description: `Implement ${decisionTitle} as an optional faculty/student trial in 2 non-core sections with human oversight.`,
+      keyAssumptions: ['Faculty retain total grading control', 'No automation of student status'],
+      nonTechDrivers: {
+        demographics: 'Traditional undergraduate preferences',
+        economics: 'Low cost pilot ($5k budget)',
+        policy: 'Complies fully with FERPA',
+        geopolitics: 'Domestic server hosting'
+      },
+      reversibilityRating: 5,
+      isAiDrafted: false,
+      generationMode: 'deterministic' as const
+    },
+    {
+      scenarioType: 'moderate',
+      title: `[Deterministic] Hybrid Co-Pilot Deployment`,
+      description: `Integrate ${decisionTitle} to assist human instructors with initial draft analysis, requiring instructor approval for all scores.`,
+      keyAssumptions: ['Reduces instructor prep time by 25%', 'Human approval gate mandatory'],
+      nonTechDrivers: {
+        demographics: 'Rising class enrollments',
+        economics: 'Moderate subscription cost',
+        policy: 'Requires faculty senate co-design',
+        geopolitics: 'Standard SLA'
+      },
+      reversibilityRating: 4,
+      isAiDrafted: false,
+      generationMode: 'deterministic' as const
+    },
+    {
+      scenarioType: 'ambitious',
+      title: `[Deterministic] Institution-Wide Strategic Modernization`,
+      description: `Full scale integration of ${decisionTitle} across all undergraduate programs with custom fine-tuned institutional domain models.`,
+      keyAssumptions: ['High faculty adoption', 'Seamless LMS integration'],
+      nonTechDrivers: {
+        demographics: 'Competitive student recruitment',
+        economics: 'Significant capital investment',
+        policy: 'New institutional AI policy framework',
+        geopolitics: 'Cloud infrastructure contract'
+      },
+      reversibilityRating: 3,
+      isAiDrafted: false,
+      generationMode: 'deterministic' as const
+    },
+    {
+      scenarioType: 'adverse',
+      title: `[Deterministic] Algorithmic Misalignment & Student Dispute Backlog`,
+      description: `Systemic false positive flags and biased feedback trigger widespread student appeals, faculty pushback, and accreditor inquiry.`,
+      keyAssumptions: ['Model lacks discipline-specific nuance', 'Students lose trust in evaluation'],
+      nonTechDrivers: {
+        demographics: 'Disproportionately affects ESL/first-gen students',
+        economics: 'High administrative appeal handling cost',
+        policy: 'Accreditor warning on substantive interaction',
+        geopolitics: 'API downtime during finals'
+      },
+      reversibilityRating: 2,
+      isAiDrafted: false,
+      generationMode: 'deterministic' as const
+    },
+    {
+      scenarioType: 'disruptive',
+      title: `[Deterministic] Curriculum Disintermediation & Value Erosion`,
+      description: `Complete breakdown of authentic student assessment leading to credential devaluation and loss of institutional trust.`,
+      keyAssumptions: ['Students use GAI to bypass core learning', 'Faculty morale collapses'],
+      nonTechDrivers: {
+        demographics: 'Enrollment drop due to loss of prestige',
+        economics: 'Long-term revenue risk',
+        policy: 'Emergency return to paper blue-books',
+        geopolitics: 'Global credential scrutiny'
+      },
+      reversibilityRating: 1,
+      isAiDrafted: false,
+      generationMode: 'deterministic' as const
+    }
+  ];
+}
+
 app.post('/api/ai/draft-scenarios', async (req, res) => {
   const { decisionTitle, decisionSummary, domain, institutionName } = req.body;
   const ai = getAI();
 
   if (!ai) {
-    // Fallback scenario generator when GEMINI_API_KEY is not configured
-    const mockScenarios = [
-      {
-        scenarioType: 'conservative',
-        title: `[AI-Drafted] Minimal Pilot: ${decisionTitle}`,
-        description: `Implement ${decisionTitle} as an optional faculty/student trial in 2 non-core sections with human oversight.`,
-        keyAssumptions: ['Faculty retain total grading control', 'No automation of student status'],
-        nonTechDrivers: {
-          demographics: 'Traditional undergraduate preferences',
-          economics: 'Low cost pilot ($5k budget)',
-          policy: 'Complies fully with FERPA',
-          geopolitics: 'Domestic server hosting'
-        },
-        reversibilityRating: 5,
-        isAiDrafted: true
-      },
-      {
-        scenarioType: 'moderate',
-        title: `[AI-Drafted] Hybrid Co-Pilot Deployment`,
-        description: `Integrate ${decisionTitle} to assist human instructors with initial draft analysis, requiring instructor approval for all scores.`,
-        keyAssumptions: ['Reduces instructor prep time by 25%', 'Human approval gate mandatory'],
-        nonTechDrivers: {
-          demographics: 'Rising class enrollments',
-          economics: 'Moderate subscription cost',
-          policy: 'Requires faculty senate co-design',
-          geopolitics: 'Standard SLA'
-        },
-        reversibilityRating: 4,
-        isAiDrafted: true
-      },
-      {
-        scenarioType: 'ambitious',
-        title: `[AI-Drafted] Institution-Wide Strategic Modernization`,
-        description: `Full scale integration of ${decisionTitle} across all undergraduate programs with custom fine-tuned institutional domain models.`,
-        keyAssumptions: ['High faculty adoption', 'Seamless LMS integration'],
-        nonTechDrivers: {
-          demographics: 'Competitive student recruitment',
-          economics: 'Significant capital investment',
-          policy: 'New institutional AI policy framework',
-          geopolitics: 'Cloud infrastructure contract'
-        },
-        reversibilityRating: 3,
-        isAiDrafted: true
-      },
-      {
-        scenarioType: 'adverse',
-        title: `[AI-Drafted] Algorithmic Misalignment & Student Dispute Backlog`,
-        description: `Systemic false positive flags and biased feedback trigger widespread student appeals, faculty pushback, and accreditor inquiry.`,
-        keyAssumptions: ['Model lacks discipline-specific nuance', 'Students lose trust in evaluation'],
-        nonTechDrivers: {
-          demographics: 'Disproportionately affects ESL/first-gen students',
-          economics: 'High administrative appeal handling cost',
-          policy: 'Accreditor warning on substantive interaction',
-          geopolitics: 'API downtime during finals'
-        },
-        reversibilityRating: 2,
-        isAiDrafted: true
-      },
-      {
-        scenarioType: 'disruptive',
-        title: `[AI-Drafted] Curriculum Disintermediation & Value Erosion`,
-        description: `Complete breakdown of authentic student assessment leading to credential devaluation and loss of institutional trust.`,
-        keyAssumptions: ['Students use GAI to bypass core learning', 'Faculty morale collapses'],
-        nonTechDrivers: {
-          demographics: 'Enrollment drop due to loss of prestige',
-          economics: 'Long-term revenue risk',
-          policy: 'Emergency return to paper blue-books',
-          geopolitics: 'Global credential scrutiny'
-        },
-        reversibilityRating: 1,
-        isAiDrafted: true
-      }
-    ];
-
-    return res.json({ scenarios: mockScenarios, note: 'Generated via Proteus AI Engine (Fallback mode - configure GEMINI_API_KEY for live model response)' });
+    return res.json({
+      scenarios: buildDeterministicScenarios(decisionTitle),
+      mode: 'deterministic',
+      note: 'Deterministic mode — no external AI call. Scenarios are generated from the built-in Compass templates. Set ENABLE_AI=true and GEMINI_API_KEY to enable live model generation.'
+    });
   }
 
   try {
@@ -487,14 +517,20 @@ Return strictly valid JSON array of 5 scenario objects inside a top level "scena
     if (parsed.scenarios && Array.isArray(parsed.scenarios) && parsed.scenarios.length >= 5) {
       const formatted = parsed.scenarios.map((s: any) => ({
         ...s,
-        isAiDrafted: true
+        isAiDrafted: true,
+        generationMode: 'ai'
       }));
-      return res.json({ scenarios: formatted });
+      return res.json({ scenarios: formatted, mode: 'ai_assisted' });
     } else {
       throw new Error('Invalid JSON format from model');
     }
   } catch (err: any) {
-    res.status(500).json({ error: 'AI generation failed: ' + err.message });
+    // Fail safe: never hard-fail scenario generation — serve deterministic templates.
+    return res.json({
+      scenarios: buildDeterministicScenarios(decisionTitle),
+      mode: 'deterministic_fallback',
+      note: 'AI generation failed; served deterministic templates instead. Reason: ' + err.message
+    });
   }
 });
 

@@ -36,6 +36,8 @@ We do **not** use advertising, analytics, or cross-site tracking cookies. We use
 
 ## 6. AI Processing
 
+**AI features are off by default.** Unless AI is explicitly enabled server-side, Proteus produces scenario drafts from its own built-in deterministic templates and does not send your text to any AI provider.
+
 When AI features are enabled and a model provider is configured (currently Google Gemini), the text you submit for those specific functions is sent to that provider to generate a response. We send only the information necessary to deliver that function, and we do not send confidential data to AI providers. If no AI provider is configured, Proteus uses built-in fallback content and does not send your text to an AI provider.
 
 **Do not enter confidential, regulated, or personal data into preview/demo AI features.** AI providers process requests under their own terms, which we do not control.

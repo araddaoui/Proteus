@@ -110,6 +110,7 @@ export interface DecisionRecord {
   recommendedActionNotes?: string;
   implementationStatus: 'proposed' | 'under_review' | 'approved_pending' | 'implemented' | 'shelved';
   isAiDrafted: boolean; // Labels AI assistance
+  generationMode?: 'ai' | 'deterministic'; // How this record was produced
   kernelSectionIds: string[]; // Links to Compass principles
   // Multi-Signature Academic + Administrative Dual Governance Gate (Sections II, XIV & XXX)
   academicSignoff?: GovernanceSignoff;
@@ -156,6 +157,7 @@ export interface ScenarioEntry {
   };
   reversibilityRating: number; // 1 (highly irreversible) to 5 (completely reversible)
   isAiDrafted: boolean;
+  generationMode?: 'ai' | 'deterministic'; // How this scenario was produced
 }
 
 export interface StakeholderImpact {

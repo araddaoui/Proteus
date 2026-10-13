@@ -2,5 +2,7 @@
   "name": "Proteus — Higher Education AI Compass Dashboard",
   "description": "Multi-stakeholder strategic intelligence and governance platform for higher education AI transformation.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [],
+  "aiEnabledByDefault": false,
+  "aiNotes": "AI-assisted scenario generation is OPTIONAL and OFF by default. The core platform runs in a deterministic, key-free mode and makes no external AI calls unless ENABLE_AI=true and GEMINI_API_KEY are configured server-side."
 }

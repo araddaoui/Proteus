@@ -139,6 +139,8 @@ function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
 
   const [kernelVersion, setKernelVersion] = useState(getActiveKernel().version);
   const [isLoading, setIsLoading] = useState(false);
+  // Deterministic (key-free) mode is the default; the server is the source of truth.
+  const [aiEnabled, setAiEnabled] = useState(false);
 
   const loadData = async () => {
     try {
@@ -163,6 +165,7 @@ function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
         inputRes,
         jobsRes,
         kernelRes,
+        configRes,
       ] = await Promise.all([
         fetch(`/api/profile/${currentTenantId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
         fetch('/api/overlay-packs').then((r) => (r.ok ? r.json() : null)).catch(() => null),
@@ -173,6 +176,7 @@ function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
         fetch(`/api/input-instruments/${currentTenantId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
         fetch('/api/jobs').then((r) => (r.ok ? r.json() : null)).catch(() => null),
         fetch('/api/kernel').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch('/api/config').then((r) => (r.ok ? r.json() : null)).catch(() => null),
       ]);
 
       if (profileRes?.profile) setProfile(profileRes.profile);
@@ -189,6 +193,7 @@ function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
       if (inputRes?.shadowAiReports) setShadowReports(inputRes.shadowAiReports);
       if (jobsRes) setJobs(jobsRes);
       if (kernelRes?.kernel?.version) setKernelVersion(kernelRes.kernel.version);
+      if (typeof configRes?.aiEnabled === 'boolean') setAiEnabled(configRes.aiEnabled);
 
       if (decisionsRes && decisionsRes.length > 0) {
         const firstDecId = decisionsRes[0].id;
@@ -478,6 +483,7 @@ function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
             onToggleGate={handleToggleGate}
             onGenerateAiScenarios={handleGenerateAiScenarios}
             onAddDecision={handleAddDecision}
+            aiEnabled={aiEnabled}
           />
         )}
 

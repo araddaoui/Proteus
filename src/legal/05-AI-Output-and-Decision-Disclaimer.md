@@ -28,9 +28,11 @@ Do not use Proteus to make any decision that is required by law, regulation, acc
 
 AI-generated content may be inaccurate, outdated, incomplete, or biased, and may reflect errors in its source material or training data. Proteus is designed to flag uncertainty and distinguish evidence from inference where possible, but it cannot guarantee the correctness of any output, including evidence summaries, scenario forecasts, or red-flag pattern matches.
 
-## 4. Third-Party AI Processing
+## 4. Deterministic vs. AI-Assisted Modes
 
-When AI features are enabled, the text you submit is processed by a third-party model provider (currently Google Gemini when configured). AI providers may retain requests under their own terms, which we do not control. **Do not submit confidential, regulated, or personal data to AI features in preview/demo mode.**
+Proteus runs in **deterministic mode by default**. In this mode, scenario drafts are produced from Proteus's own built-in templates and rules; **no text is sent to any AI model provider** and no AI API key is required. Deterministic output is still advisory and subject to every limitation in this document.
+
+**AI-assisted mode** is opt-in and active only when explicitly enabled server-side. In that mode, the text you submit for those specific functions is processed by a third-party model provider (currently Google Gemini when configured). AI providers may retain requests under their own terms, which we do not control. **Do not submit confidential, regulated, or personal data to AI features in preview/demo mode.**
 
 ## 5. Evidence Requires a Source, Not Guaranteed Accuracy
 
