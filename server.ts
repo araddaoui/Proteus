@@ -507,7 +507,11 @@ app.post('/api/ai/analyze-proposal', async (req, res) => {
 // Vite / Production Static File Serving Setup
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
+    // Non-literal specifier: keeps Vite (and its esbuild binary) out of the
+    // Vercel serverless bundle. This branch only ever runs in local dev, where
+    // "vite" is installed as a devDependency.
+    const viteModuleId = 'vite';
+    const { createServer: createViteServer } = (await import(viteModuleId)) as typeof import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
