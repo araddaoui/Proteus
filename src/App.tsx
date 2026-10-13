@@ -499,6 +499,8 @@ function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
           <PredictionTrackerView
             predictions={predictions}
             userRole={currentRole}
+            currentUserId={user.uid}
+            currentUserName={user.displayName}
             onAddPrediction={handleAddPrediction}
             onResolvePrediction={handleResolvePrediction}
           />

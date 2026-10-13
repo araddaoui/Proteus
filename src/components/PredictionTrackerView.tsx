@@ -5,6 +5,8 @@ import { Activity, Clock, CheckCircle, AlertTriangle, Plus, RotateCcw, Check, X 
 interface PredictionTrackerViewProps {
   predictions: PredictionRecord[];
   userRole: UserRole;
+  currentUserId: string;
+  currentUserName: string;
   onAddPrediction: (pred: Omit<PredictionRecord, 'id' | 'dateMade'>) => void;
   onResolvePrediction: (
     id: string,
@@ -17,6 +19,8 @@ interface PredictionTrackerViewProps {
 export const PredictionTrackerView: React.FC<PredictionTrackerViewProps> = ({
   predictions,
   userRole,
+  currentUserId,
+  currentUserName,
   onAddPrediction,
   onResolvePrediction,
 }) => {
@@ -42,8 +46,8 @@ export const PredictionTrackerView: React.FC<PredictionTrackerViewProps> = ({
     onAddPrediction({
       tenantId: 'inst-1',
       predictionText: predText,
-      madeByUserId: 'user-curr',
-      madeByUserName: 'Current User',
+      madeByUserId: currentUserId,
+      madeByUserName: currentUserName,
       madeByRole: userRole,
       targetDate,
       resolutionStatus: 'pending',

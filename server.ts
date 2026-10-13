@@ -63,6 +63,18 @@ app.get('/api/config', (req, res) => {
   });
 });
 
+// Local sandbox reset. Restores every collection to the RSU baseline so a
+// tester can return to a known-clean state. The client calls this from a
+// dev-only control in the header.
+app.post('/api/sandbox/reset', (req, res) => {
+  try {
+    const result = db.resetToBaseline();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/compass/principles', (req, res) => {
   const kernel = getActiveKernel();
   res.json(kernel);

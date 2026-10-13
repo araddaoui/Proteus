@@ -1,6 +1,6 @@
 import React from 'react';
 import { UserRole, Institution, OverlayPack } from '../types';
-import { ShieldCheck, Compass, Users, Building2, AlertTriangle, Layers, BookOpen } from 'lucide-react';
+import { ShieldCheck, Compass, Users, Building2, AlertTriangle, Layers, BookOpen, RotateCcw } from 'lucide-react';
 
 interface HeaderProps {
   currentRole: UserRole;
@@ -31,6 +31,19 @@ export const Header: React.FC<HeaderProps> = ({
   setActiveTab,
 }) => {
   const currentInst = institutions.find((i) => i.id === currentTenantId) || institutions[0];
+
+  const handleResetSandbox = async () => {
+    if (!window.confirm('Reset the sandbox to the RSU baseline? This overwrites all local changes.')) {
+      return;
+    }
+    try {
+      await fetch('/api/sandbox/reset', { method: 'POST' });
+    } catch {
+      // Offline fallback: still clear local state below.
+    }
+    localStorage.removeItem('proteus_store');
+    window.location.reload();
+  };
 
   const roleNavItems = [
     { id: 'overview', label: 'Compass Executive Hub', roles: ['leadership', 'faculty', 'student', 'consultant'] },
@@ -120,6 +133,17 @@ export const Header: React.FC<HeaderProps> = ({
           >
             Change Identity
           </button>
+
+          {/* Local sandbox only. Never rendered in production builds. */}
+          {import.meta.env.DEV && (
+            <button
+              onClick={handleResetSandbox}
+              title="Restore the RSU sandbox baseline (local dev only)"
+              className="text-xs font-semibold text-amber-300 hover:text-amber-100 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-800 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Reset Sandbox
+            </button>
+          )}
         </div>
       </div>
 
