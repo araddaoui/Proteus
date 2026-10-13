@@ -1,8 +1,8 @@
 import express from 'express';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
-import { db } from './src/services/db';
-import { getActiveKernel, getKernelVersionHistory, evaluateProposalAgainstKernel } from './src/kernel/kernelModule';
+import { db } from './src/services/db.js';
+import { getActiveKernel, getKernelVersionHistory, evaluateProposalAgainstKernel } from './src/kernel/kernelModule.js';
 
 const app = express();
 const PORT = 3000;

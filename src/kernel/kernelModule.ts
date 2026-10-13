@@ -1,4 +1,4 @@
-import compassV1 from './compass-v1.0.json';
+import compassV1 from './compass-v1.0.json' with { type: 'json' };
 import { KernelVersionInfo, CompassSection } from '../types';
 
 export interface FinalTestRubric {
