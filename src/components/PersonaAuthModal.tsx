@@ -323,9 +323,16 @@ export const PersonaAuthModal: React.FC<PersonaAuthModalProps> = ({ isOpen, onCl
 
         {/* Footer info */}
         <div className="bg-slate-950 px-6 py-3 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-          <span className="flex items-center gap-1 text-slate-400">
-            <Lock className="w-3 h-3 text-indigo-400" /> Demo session active — not a secured login
-          </span>
+          <div className="flex flex-col gap-1">
+            <span className="flex items-center gap-1 text-slate-400">
+              <Lock className="w-3 h-3 text-indigo-400" /> Demo session active — not a secured login
+            </span>
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <a href="/security-notice" className="text-indigo-400 hover:text-indigo-300 font-medium">Security notice</a>
+              <a href="/terms" className="text-indigo-400 hover:text-indigo-300 font-medium">Terms</a>
+              <a href="/privacy" className="text-indigo-400 hover:text-indigo-300 font-medium">Privacy</a>
+            </span>
+          </div>
           <button
             onClick={onClose}
             className="text-indigo-400 hover:text-indigo-300 font-medium"

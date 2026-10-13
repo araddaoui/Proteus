@@ -697,6 +697,20 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onOpenAuthModa
             </div>
           </div>
 
+          <nav className="mt-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[11px] text-slate-400">
+            <a href="/terms" className="transition hover:text-white">Terms of Service</a>
+            <span className="text-slate-700">•</span>
+            <a href="/privacy" className="transition hover:text-white">Privacy Policy</a>
+            <span className="text-slate-700">•</span>
+            <a href="/acceptable-use" className="transition hover:text-white">Acceptable Use</a>
+            <span className="text-slate-700">•</span>
+            <a href="/ai-disclaimer" className="transition hover:text-white">AI Disclaimer</a>
+            <span className="text-slate-700">•</span>
+            <a href="/charter" className="transition hover:text-white">Ethical Charter</a>
+            <span className="text-slate-700">•</span>
+            <a href="/security-notice" className="transition hover:text-white">Preview &amp; Security Notice</a>
+          </nav>
+
           <div className="mt-12 pt-8 border-t border-slate-900 flex flex-wrap items-center justify-between gap-4 text-[11px] text-slate-500">
             <div className="flex items-center gap-2">
               <div className="w-5 h-5 bg-indigo-600 rounded flex items-center justify-center font-bold text-white text-xs font-serif">P</div>

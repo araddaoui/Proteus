@@ -16,6 +16,8 @@ import { GrassrootsInputView } from './components/GrassrootsInputView';
 import { KernelVersionManager } from './components/KernelVersionManager';
 import { JobsAndGovernanceView } from './components/JobsAndGovernanceView';
 import { CompassMasterView } from './components/CompassMasterView';
+import { LegalPage } from './components/LegalPage';
+import { getLegalDocForPath } from './legal/legalDocs';
 import { db } from './services/db';
 import { getActiveKernel } from './kernel/kernelModule';
 
@@ -43,11 +45,27 @@ export default function App() {
   );
 }
 
+// Tracks the current URL path so the app can render a standalone legal page
+// (for example /terms) on a full-page load — the Vercel rewrite and the dev
+// server both serve index.html for these routes, and this reads the path on
+// boot and on browser back/forward.
+function usePathname(): string {
+  const [pathname, setPathname] = useState(() => window.location.pathname);
+  useEffect(() => {
+    const onChange = () => setPathname(window.location.pathname);
+    window.addEventListener('popstate', onChange);
+    return () => window.removeEventListener('popstate', onChange);
+  }, []);
+  return pathname;
+}
+
 // Decides landing page vs. workspace, and owns the single shared identity
 // modal instance so there is exactly one way to change identity in the app
 // (the landing page's CTAs and the in-app Header's "Change Identity" button
 // both open this same modal — no separate bypass path either place).
 function ProteusRoot() {
+  const pathname = usePathname();
+  const legalDoc = getLegalDocForPath(pathname);
   const [view, setView] = useState<'landing' | 'workspace'>('landing');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
@@ -59,6 +77,10 @@ function ProteusRoot() {
   const handleIdentityConfirmed = () => {
     setView('workspace');
   };
+
+  if (legalDoc) {
+    return <LegalPage doc={legalDoc} />;
+  }
 
   return (
     <>
