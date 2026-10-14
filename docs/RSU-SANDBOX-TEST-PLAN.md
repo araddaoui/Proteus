@@ -55,7 +55,7 @@ represented. The dataset lives in `src/sandbox/rsuSeed.ts` and is loaded by
 | Evidence claims | 10 | `claim-r1` … `claim-r10` |
 | Evidence staging | 3 | `stage-r1` … `stage-r3` (pending review) |
 | Decisions | 8 | `dec-r1` … `dec-r8` |
-| Scenarios | 15 | 5-type matrices for `dec-r1`, `dec-r2`, `dec-r4` |
+| Scenarios | 40 | Full 5-type matrices (`conservative`/`moderate`/`ambitious`/`adverse`/`disruptive`) for all 8 decisions |
 | Stakeholder impacts | 18 | `stk-r1-*`, `stk-r2-*`, `stk-r4-*` |
 | Predictions | 6 | `pred-r1` … `pred-r6` |
 | Red flags | 8 | 5 legacy (`rf-01`…`rf-05`) + 3 RSU (`rf-r1`…`rf-r3`) |
