@@ -11,8 +11,8 @@ import {
   PulseSurveyResponse,
   ShadowAiReport,
   InstitutionalDiagnosticItem,
-} from '../types';
-import { PersonaProfile, SEED_PERSONAS } from '../types/auth';
+} from '../types/index.js';
+import { PersonaProfile, SEED_PERSONAS } from '../types/auth.js';
 
 // ---------------------------------------------------------------------------
 // Ruritania State University (RSU) sandbox baseline.

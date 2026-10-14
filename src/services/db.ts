@@ -13,8 +13,8 @@ import {
   ShadowAiReport,
   JobExecutionStatus,
   InstitutionalDiagnosticItem,
-} from '../types';
-import { buildRsuBaseline } from '../sandbox/rsuSeed';
+} from '../types/index.js';
+import { buildRsuBaseline } from '../sandbox/rsuSeed.js';
 
 // Deep clone so the live database never shares mutable references with the
 // RSU baseline module constants. Mutating a seeded record (e.g. setting a

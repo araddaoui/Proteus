@@ -1,4 +1,4 @@
-import { UserRole } from './index';
+import { UserRole } from './index.js';
 
 export type StakeholderRole = 'high_admin' | 'program_director' | 'student' | 'consultant';
 

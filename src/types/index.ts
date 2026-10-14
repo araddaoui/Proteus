@@ -1,5 +1,5 @@
 export type UserRole = 'high_admin' | 'program_director' | 'student' | 'consultant' | 'leadership' | 'faculty';
-export * from './auth';
+export * from './auth.js';
 
 export type AcademicGovernanceType = 'faculty_senate' | 'scientific_council' | 'academic_council' | 'none';
 
