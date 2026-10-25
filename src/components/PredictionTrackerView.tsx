@@ -1,29 +1,27 @@
 import React, { useState } from 'react';
-import { PredictionRecord, UserRole } from '../types';
-import { Activity, Clock, CheckCircle, AlertTriangle, Plus, RotateCcw, Check, X } from 'lucide-react';
+import { PredictionRecord } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { Activity, AlertTriangle, Plus } from 'lucide-react';
 
 interface PredictionTrackerViewProps {
   predictions: PredictionRecord[];
-  userRole: UserRole;
-  currentUserId: string;
-  currentUserName: string;
-  onAddPrediction: (pred: Omit<PredictionRecord, 'id' | 'dateMade'>) => void;
+  onAddPrediction: (
+    pred: Pick<PredictionRecord, 'predictionText' | 'targetDate' | 'scopeLevel'>,
+  ) => Promise<void>;
   onResolvePrediction: (
     id: string,
     resolutionStatus: PredictionRecord['resolutionStatus'],
     actualOutcome: string,
     lessonsLearned: string
-  ) => void;
+  ) => Promise<void>;
 }
 
 export const PredictionTrackerView: React.FC<PredictionTrackerViewProps> = ({
   predictions,
-  userRole,
-  currentUserId,
-  currentUserName,
   onAddPrediction,
   onResolvePrediction,
 }) => {
+  const { hasCapability } = useAuth();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showResolveModal, setShowResolveModal] = useState<PredictionRecord | null>(null);
 
@@ -37,33 +35,48 @@ export const PredictionTrackerView: React.FC<PredictionTrackerViewProps> = ({
   const [actualOutcome, setActualOutcome] = useState('');
   const [lessonsLearned, setLessonsLearned] = useState('');
 
-  const canEdit = userRole === 'leadership' || userRole === 'faculty' || userRole === 'consultant';
+  const [formError, setFormError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
 
-  const handleCreatePrediction = (e: React.FormEvent) => {
+  const canEdit = hasCapability('manage_predictions');
+
+  const handleCreatePrediction = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError('');
     if (!predText.trim()) return;
 
-    onAddPrediction({
-      tenantId: 'inst-1',
-      predictionText: predText,
-      madeByUserId: currentUserId,
-      madeByUserName: currentUserName,
-      madeByRole: userRole,
-      targetDate,
-      resolutionStatus: 'pending',
-      scopeLevel,
-    });
+    setIsSaving(true);
+    try {
+      await onAddPrediction({
+        predictionText: predText,
+        targetDate,
+        scopeLevel,
+      });
 
-    setShowAddModal(false);
-    setPredText('');
+      setShowAddModal(false);
+      setPredText('');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Could not save the prediction.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleSaveResolution = (e: React.FormEvent) => {
+  const handleSaveResolution = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError('');
     if (!showResolveModal || !actualOutcome.trim()) return;
 
-    onResolvePrediction(showResolveModal.id, resolutionStatus, actualOutcome, lessonsLearned);
-    setShowResolveModal(null);
+    setIsResolving(true);
+    try {
+      await onResolvePrediction(showResolveModal.id, resolutionStatus, actualOutcome, lessonsLearned);
+      setShowResolveModal(null);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Could not save the resolution.');
+    } finally {
+      setIsResolving(false);
+    }
   };
 
   const getStatusBadge = (status: PredictionRecord['resolutionStatus'], targetDate: string) => {
@@ -104,7 +117,10 @@ export const PredictionTrackerView: React.FC<PredictionTrackerViewProps> = ({
 
         {canEdit && (
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => {
+              setFormError('');
+              setShowAddModal(true);
+            }}
             className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
           >
             <Plus className="w-4 h-4" /> Log Strategic Prediction
@@ -139,6 +155,7 @@ export const PredictionTrackerView: React.FC<PredictionTrackerViewProps> = ({
               {pred.resolutionStatus === 'pending' && canEdit && (
                 <button
                   onClick={() => {
+                    setFormError('');
                     setShowResolveModal(pred);
                     setActualOutcome(pred.actualOutcome || '');
                     setLessonsLearned(pred.lessonsLearned || '');
@@ -174,6 +191,11 @@ export const PredictionTrackerView: React.FC<PredictionTrackerViewProps> = ({
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-lg w-full space-y-5 shadow-2xl text-slate-900">
             <h3 className="text-base font-bold text-slate-900">Log Strategic Prediction</h3>
+            {formError && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-800">
+                {formError}
+              </div>
+            )}
             <form onSubmit={handleCreatePrediction} className="space-y-4 text-xs">
               <div className="space-y-1">
                 <label className="text-slate-700 font-bold">Prediction Text</label>
@@ -215,8 +237,12 @@ export const PredictionTrackerView: React.FC<PredictionTrackerViewProps> = ({
                 <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold">
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold shadow-sm">
-                  Save Prediction
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold shadow-sm disabled:opacity-60"
+                >
+                  {isSaving ? 'Saving…' : 'Save Prediction'}
                 </button>
               </div>
             </form>
@@ -229,6 +255,11 @@ export const PredictionTrackerView: React.FC<PredictionTrackerViewProps> = ({
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-lg w-full space-y-5 shadow-2xl text-slate-900">
             <h3 className="text-base font-bold text-slate-900">Reconcile Prediction & Outcome</h3>
+            {formError && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-800">
+                {formError}
+              </div>
+            )}
             <form onSubmit={handleSaveResolution} className="space-y-4 text-xs">
               <div className="space-y-1">
                 <label className="text-slate-700 font-bold">Resolution Status</label>
@@ -269,8 +300,12 @@ export const PredictionTrackerView: React.FC<PredictionTrackerViewProps> = ({
                 <button type="button" onClick={() => setShowResolveModal(null)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold">
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold shadow-sm">
-                  Save Resolution
+                <button
+                  type="submit"
+                  disabled={isResolving}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold shadow-sm disabled:opacity-60"
+                >
+                  {isResolving ? 'Saving…' : 'Save Resolution'}
                 </button>
               </div>
             </form>

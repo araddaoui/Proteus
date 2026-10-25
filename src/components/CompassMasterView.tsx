@@ -21,7 +21,7 @@ import {
   Check
 } from 'lucide-react';
 import { getActiveKernel, INSTITUTIONAL_DIAGNOSTIC_CATEGORIES, evaluateProposalAgainstKernel } from '../kernel/kernelModule';
-import { db } from '../services/db';
+import { useAuth } from '../context/AuthContext';
 
 interface CompassMasterViewProps {
   userRole: UserRole;
@@ -36,6 +36,7 @@ export const CompassMasterView: React.FC<CompassMasterViewProps> = ({
   institution,
   onNavigateTab
 }) => {
+  const { apiFetch, hasCapability } = useAuth();
   const kernel = getActiveKernel();
   const [activeSubTab, setActiveSubTab] = useState<'browser' | 'final_test' | 'diagnostic' | 'possibility'>('browser');
   const [searchQuery, setSearchQuery] = useState('');
@@ -67,31 +68,15 @@ export const CompassMasterView: React.FC<CompassMasterViewProps> = ({
   const loadDiagnostics = async () => {
     try {
       setLoadingDiag(true);
-      const res = await fetch(`/api/compass/diagnostic/${currentTenantId}`)
-        .then(r => r.ok ? r.json() : null)
-        .catch(() => null);
-
-      if (res && res.items) {
-        setDiagnosticData(res);
-        return;
-      }
-      
-      // Fallback to local db if API sync is deferred
-      const items = db.getDiagnosticsForTenant(currentTenantId);
-      const total = items.length;
-      const availableCount = items.filter(i => i.isAvailable).length;
-      const missingItems = items.filter(i => !i.isAvailable);
-      const completionPercentage = total > 0 ? Math.round((availableCount / total) * 100) : 0;
-      setDiagnosticData({
-        total,
-        availableCount,
-        completionPercentage,
-        missingItems,
-        items,
-        mandatoryGapStatement: missingItems.length > 0 
-          ? `A reliable recommendation cannot yet be made because the following ${missingItems.length} essential institutional datasets are missing: ${missingItems.slice(0, 5).map(m => m.name).join(', ')}${missingItems.length > 5 ? ` and ${missingItems.length - 5} more.` : '.'}`
-          : 'All foundational institutional baseline datasets verified. Institutional diagnostic criteria satisfied.'
-      });
+      const res = await apiFetch<{
+        total: number;
+        availableCount: number;
+        completionPercentage: number;
+        missingItems: any[];
+        items: any[];
+        mandatoryGapStatement: string;
+      }>('/compass/diagnostic');
+      setDiagnosticData(res);
     } catch (err) {
       console.error('Failed to load diagnostics:', err);
     } finally {
@@ -104,15 +89,13 @@ export const CompassMasterView: React.FC<CompassMasterViewProps> = ({
   }, [currentTenantId]);
 
   const handleToggleDiag = async (diagId: string, currentVal: boolean) => {
+    if (!hasCapability('edit_diagnostics')) return;
     try {
-      // Toggle local db immediately for instant UI responsiveness
-      db.toggleDiagnosticAvailability(currentTenantId, diagId, !currentVal);
-      fetch(`/api/compass/diagnostic/${currentTenantId}/${diagId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isAvailable: !currentVal })
-      }).catch(() => null);
-      loadDiagnostics();
+      await apiFetch(`/compass/diagnostic/${diagId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isAvailable: !currentVal }),
+      });
+      await loadDiagnostics();
     } catch (err) {
       console.error('Failed to toggle diagnostic item:', err);
     }
@@ -122,11 +105,13 @@ export const CompassMasterView: React.FC<CompassMasterViewProps> = ({
     if (!proposalInput.trim()) return;
     setAuditRunning(true);
     try {
-      const res = await fetch('/api/compass/final-test-audit', {
+      const res = await apiFetch<{
+        matchedPrinciples: CompassSection[];
+        finalTestResults: FinalTestAuditEntry[];
+      }>('/compass/final-test-audit', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ proposalText: proposalInput, role: userRole })
-      }).then(r => r.ok ? r.json() : null).catch(() => null);
+        body: JSON.stringify({ proposalText: proposalInput }),
+      });
 
       if (res && res.finalTestResults) {
         setAuditResults({

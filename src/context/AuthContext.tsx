@@ -1,297 +1,263 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { AuthenticatedUser, PersonaProfile, SEED_PERSONAS, StakeholderRole } from '../types/auth';
-import { signInWithGoogle, logOutFromFirebase, auth } from '../services/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import { onIdTokenChanged, type User as FirebaseUser } from 'firebase/auth';
+import type {
+  AuthenticatedUser,
+  Capability,
+  MeResponse,
+  MembershipInfo,
+  TenantRole,
+} from '../types/auth';
+import { toUiRole } from '../types/auth';
+import {
+  auth,
+  isFirebaseConfigured,
+  logOutFromFirebase,
+  reauthenticateWithGoogle,
+  signInWithGoogle,
+} from '../services/firebase';
+import { ApiError, parseApiResponse } from '../services/api';
+
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || '/api/v1';
+const ACTIVE_TENANT_KEY = 'proteus_active_tenant';
 
 interface AuthContextType {
-  user: AuthenticatedUser;
+  user: AuthenticatedUser | null;
+  firebaseUser: FirebaseUser | null;
+  memberships: MembershipInfo[];
+  activeTenantId: string | null;
   token: string | null;
-  personas: PersonaProfile[];
-  activePersona: PersonaProfile | null;
   isLoggedIn: boolean;
-  switchPersona: (personaId: string) => Promise<void>;
-  loginCustom: (email: string, role: StakeholderRole, displayName: string, title?: string, institutionName?: string) => Promise<void>;
-  loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
-  logout: () => void;
-  getAuthHeaders: () => Record<string, string>;
-  // Role & privilege capability flags
+  isLoading: boolean;
+  error: string | null;
+  isFirebaseConfigured: boolean;
+  loginWithGoogle: () => Promise<{ success: boolean; error?: string; membershipCount?: number }>;
+  logout: () => Promise<void>;
+  switchTenant: (tenantId: string) => void;
+  refreshMe: () => Promise<void>;
+  reauthenticate: () => Promise<void>;
+  getToken: (forceRefresh?: boolean) => Promise<string>;
+  apiFetch: <T>(path: string, init?: RequestInit) => Promise<T>;
+  hasCapability: (capability: Capability) => boolean;
   canAcademicSignoff: boolean;
   canAdministrativeSignoff: boolean;
   canManageDecisions: boolean;
   canReviewEvidence: boolean;
   canTriggerJobs: boolean;
+  canResetDemo: boolean;
   isStudent: boolean;
 }
 
-// Default initial state: Dr. Evelyn Vance (High-Level Administration)
-const DEFAULT_PERSONA = SEED_PERSONAS[0];
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function chooseTenant(memberships: MembershipInfo[], current: string | null): string | null {
+  const saved = localStorage.getItem(ACTIVE_TENANT_KEY);
+  const candidates = [current, saved].filter(Boolean) as string[];
+  for (const candidate of candidates) {
+    if (memberships.some((membership) => membership.tenantId === candidate)) return candidate;
+  }
+  return memberships[0]?.tenantId || null;
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
-    return localStorage.getItem('proteus_is_logged_in') === 'true';
-  });
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [memberships, setMemberships] = useState<MembershipInfo[]>([]);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  const [activeTenantId, setActiveTenantId] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [user, setUser] = useState<AuthenticatedUser>(() => {
-    const saved = localStorage.getItem('proteus_auth_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        // fallback
-      }
-    }
-    return {
-      uid: DEFAULT_PERSONA.id,
-      email: DEFAULT_PERSONA.email,
-      displayName: DEFAULT_PERSONA.name,
-      role: DEFAULT_PERSONA.role,
-      title: DEFAULT_PERSONA.title,
-      tenantId: DEFAULT_PERSONA.tenantId,
-      governingBodyAffiliation: DEFAULT_PERSONA.governingBodyAffiliation,
-      isPersona: true,
-      token: btoa(JSON.stringify({
-        uid: DEFAULT_PERSONA.id,
-        email: DEFAULT_PERSONA.email,
-        displayName: DEFAULT_PERSONA.name,
-        role: DEFAULT_PERSONA.role,
-        title: DEFAULT_PERSONA.title,
-        tenantId: DEFAULT_PERSONA.tenantId,
-        governingBodyAffiliation: DEFAULT_PERSONA.governingBodyAffiliation
-      }))
-    };
-  });
-
-  const [token, setToken] = useState<string | null>(() => {
-    return user.token || localStorage.getItem('proteus_auth_token') || null;
-  });
-
-  useEffect(() => {
-    if (user) {
-      localStorage.setItem('proteus_auth_user', JSON.stringify(user));
-      if (user.token) {
-        localStorage.setItem('proteus_auth_token', user.token);
-        setToken(user.token);
-      }
-    }
-  }, [user]);
-
-  // Sync Firebase Auth state
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
-      if (fbUser && fbUser.email) {
-        setIsLoggedIn(true);
-        localStorage.setItem('proteus_is_logged_in', 'true');
-        setUser((prev) => ({
-          uid: fbUser.uid,
-          email: fbUser.email || prev.email,
-          displayName: fbUser.displayName || prev.displayName,
-          role: prev.role || 'high_admin',
-          title: prev.title || 'Institutional Leader',
-          tenantId: prev.tenantId || 'inst-1',
-          governingBodyAffiliation: prev.governingBodyAffiliation || 'Office of the Provost',
-          avatarUrl: fbUser.photoURL || undefined,
-          isPersona: false,
-          token: btoa(JSON.stringify({
-            uid: fbUser.uid,
-            email: fbUser.email,
-            displayName: fbUser.displayName,
-            role: prev.role || 'high_admin',
-            tenantId: prev.tenantId || 'inst-1'
-          }))
-        }));
-      }
+  const fetchMe = useCallback(async (fbUser: FirebaseUser): Promise<MeResponse> => {
+    const idToken = await fbUser.getIdToken();
+    const response = await fetch(`${API_BASE}/me`, {
+      headers: { Authorization: `Bearer ${idToken}` },
     });
-    return () => unsubscribe();
+    return parseApiResponse<MeResponse>(response);
   }, []);
 
-  const activePersona = SEED_PERSONAS.find(p => p.email === user.email) || null;
-
-  const switchPersona = async (personaId: string) => {
-    setIsLoggedIn(true);
-    localStorage.setItem('proteus_is_logged_in', 'true');
-    try {
-      const res = await fetch('/api/auth/switch-persona', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ personaId })
+  const loadMe = useCallback(
+    async (fbUser: FirebaseUser) => {
+      const me = await fetchMe(fbUser);
+      setMemberships(me.memberships);
+      setIsPlatformAdmin(me.isPlatformAdmin);
+      setActiveTenantId((current) => {
+        const next = chooseTenant(me.memberships, current);
+        if (next) localStorage.setItem(ACTIVE_TENANT_KEY, next);
+        return next;
       });
-      if (res.ok) {
-        const data = await res.json();
-        const authedUser: AuthenticatedUser = {
-          ...data.user,
-          token: data.token
-        };
-        setUser(authedUser);
-        setToken(data.token);
+      setError(null);
+      return me;
+    },
+    [fetchMe],
+  );
+
+  useEffect(() => {
+    if (!auth) {
+      setIsLoading(false);
+      setError('Firebase authentication is not configured.');
+      return;
+    }
+    const unsubscribe = onIdTokenChanged(auth, async (fbUser) => {
+      setFirebaseUser(fbUser);
+      if (!fbUser) {
+        setMemberships([]);
+        setIsPlatformAdmin(false);
+        setActiveTenantId(null);
+        setToken(null);
+        setIsLoading(false);
         return;
       }
-    } catch {
-      // Offline fallback
-    }
-
-    // Direct offline switch if network issue
-    const p = SEED_PERSONAS.find(item => item.id === personaId) || DEFAULT_PERSONA;
-    const directUser: AuthenticatedUser = {
-      uid: p.id,
-      email: p.email,
-      displayName: p.name,
-      role: p.role,
-      title: p.title,
-      tenantId: p.tenantId,
-      governingBodyAffiliation: p.governingBodyAffiliation,
-      isPersona: true,
-      token: btoa(JSON.stringify({
-        uid: p.id,
-        email: p.email,
-        displayName: p.name,
-        role: p.role,
-        title: p.title,
-        tenantId: p.tenantId,
-        governingBodyAffiliation: p.governingBodyAffiliation
-      }))
-    };
-    setUser(directUser);
-    setToken(directUser.token!);
-  };
-
-  const loginCustom = async (
-    email: string,
-    role: StakeholderRole,
-    displayName: string,
-    title?: string,
-    institutionName?: string
-  ) => {
-    setIsLoggedIn(true);
-    localStorage.setItem('proteus_is_logged_in', 'true');
-    try {
-      const res = await fetch('/api/auth/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          role,
-          displayName,
-          title,
-          tenantId: 'inst-1',
-          governingBodyAffiliation: institutionName || 'Institutional Community'
-        })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const customUser: AuthenticatedUser = {
-          ...data.user,
-          token: data.token
-        };
-        setUser(customUser);
-        setToken(data.token);
-        return;
+      try {
+        setToken(await fbUser.getIdToken());
+        await loadMe(fbUser);
+      } catch (err) {
+        setMemberships([]);
+        setIsPlatformAdmin(false);
+        setActiveTenantId(null);
+        setError(err instanceof Error ? err.message : 'Could not load your account.');
+      } finally {
+        setIsLoading(false);
       }
-    } catch {
-      // offline fallback
-    }
+    });
+    return unsubscribe;
+  }, [loadMe]);
 
-    const fallbackUser: AuthenticatedUser = {
-      uid: `user-${Date.now()}`,
-      email: email.trim().toLowerCase(),
-      displayName: displayName.trim() || email.split('@')[0],
-      role,
-      title: title || (role === 'high_admin' ? 'Institutional Administrator' : role === 'program_director' ? 'Academic Director' : 'Student'),
-      tenantId: 'inst-1',
-      governingBodyAffiliation: institutionName || (role === 'high_admin' ? 'Central Administration' : role === 'program_director' ? 'Faculty Senate' : 'Student Body'),
-      isPersona: false,
-      token: btoa(JSON.stringify({
-        uid: `user-${Date.now()}`,
-        email: email.trim().toLowerCase(),
-        displayName: displayName.trim(),
-        role,
-        title,
-        tenantId: 'inst-1'
-      }))
+  const getToken = useCallback(
+    async (forceRefresh = false) => {
+      if (!firebaseUser) throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
+      const idToken = await firebaseUser.getIdToken(forceRefresh);
+      setToken(idToken);
+      return idToken;
+    },
+    [firebaseUser],
+  );
+
+  const refreshMe = useCallback(async () => {
+    if (!firebaseUser) return;
+    await loadMe(firebaseUser);
+  }, [firebaseUser, loadMe]);
+
+  const apiFetch = useCallback(
+    async <T,>(path: string, init: RequestInit = {}): Promise<T> => {
+      const idToken = await getToken();
+      const headers = new Headers(init.headers);
+      headers.set('Authorization', `Bearer ${idToken}`);
+      if (activeTenantId) headers.set('X-Tenant-Id', activeTenantId);
+      if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
+        headers.set('Content-Type', 'application/json');
+      }
+      const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+      return parseApiResponse<T>(response);
+    },
+    [activeTenantId, getToken],
+  );
+
+  const loginWithGoogle = useCallback(async () => {
+    setError(null);
+    const { user: fbUser, error: loginError } = await signInWithGoogle();
+    if (loginError || !fbUser) {
+      const message = loginError || 'Google sign-in failed.';
+      setError(message);
+      return { success: false, error: message };
+    }
+    try {
+      setFirebaseUser(fbUser);
+      setToken(await fbUser.getIdToken());
+      const me = await loadMe(fbUser);
+      return { success: true, membershipCount: me.memberships.length };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Signed in, but account setup failed.';
+      setError(message);
+      return { success: false, error: message };
+    }
+  }, [loadMe]);
+
+  const logout = useCallback(async () => {
+    await logOutFromFirebase();
+    localStorage.removeItem(ACTIVE_TENANT_KEY);
+    setFirebaseUser(null);
+    setMemberships([]);
+    setActiveTenantId(null);
+    setToken(null);
+    setError(null);
+  }, []);
+
+  const switchTenant = useCallback(
+    (tenantId: string) => {
+      if (!memberships.some((membership) => membership.tenantId === tenantId)) return;
+      localStorage.setItem(ACTIVE_TENANT_KEY, tenantId);
+      setActiveTenantId(tenantId);
+    },
+    [memberships],
+  );
+
+  const reauthenticate = useCallback(async () => {
+    const idToken = await reauthenticateWithGoogle();
+    setToken(idToken);
+    if (firebaseUser) await loadMe(firebaseUser);
+  }, [firebaseUser, loadMe]);
+
+  const activeMembership = useMemo(
+    () => memberships.find((membership) => membership.tenantId === activeTenantId) || null,
+    [memberships, activeTenantId],
+  );
+
+  const user = useMemo<AuthenticatedUser | null>(() => {
+    if (!firebaseUser?.email || !activeMembership) return null;
+    return {
+      uid: firebaseUser.uid,
+      email: firebaseUser.email,
+      displayName: firebaseUser.displayName || firebaseUser.email.split('@')[0],
+      avatarUrl: firebaseUser.photoURL || undefined,
+      role: toUiRole(activeMembership.role as TenantRole),
+      title: activeMembership.title,
+      tenantId: activeMembership.tenantId,
+      governingBodyAffiliation: activeMembership.governingBodyAffiliation,
+      capabilities: activeMembership.capabilities,
+      memberships,
+      isPlatformAdmin,
     };
-    setUser(fallbackUser);
-    setToken(fallbackUser.token!);
-  };
+  }, [firebaseUser, activeMembership, memberships, isPlatformAdmin]);
 
-  const loginWithGoogle = async () => {
-    const { user: fbUser, error } = await signInWithGoogle();
-    if (error || !fbUser) {
-      return { success: false, error: error || 'Failed to authenticate with Google' };
-    }
-    setIsLoggedIn(true);
-    localStorage.setItem('proteus_is_logged_in', 'true');
-    const authed: AuthenticatedUser = {
-      uid: fbUser.uid,
-      email: fbUser.email || 'user@institution.edu',
-      displayName: fbUser.displayName || 'Institutional Leader',
-      role: 'high_admin',
-      title: 'Institutional Leader',
-      tenantId: 'inst-1',
-      governingBodyAffiliation: 'University Administration',
-      avatarUrl: fbUser.photoURL || undefined,
-      isPersona: false,
-      token: btoa(JSON.stringify({
-        uid: fbUser.uid,
-        email: fbUser.email,
-        displayName: fbUser.displayName,
-        role: 'high_admin',
-        tenantId: 'inst-1'
-      }))
-    };
-    setUser(authed);
-    setToken(authed.token!);
-    return { success: true };
-  };
-
-  const logout = () => {
-    logOutFromFirebase();
-    setIsLoggedIn(false);
-    localStorage.removeItem('proteus_is_logged_in');
-    localStorage.removeItem('proteus_auth_token');
-    localStorage.removeItem('proteus_auth_user');
-    switchPersona('persona-provost');
-  };
-
-  const getAuthHeaders = (): Record<string, string> => {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    if (user) {
-      headers['x-proteus-user'] = btoa(JSON.stringify(user));
-    }
-    return headers;
-  };
-
-  const canAcademicSignoff = user.role === 'program_director';
-  const canAdministrativeSignoff = user.role === 'high_admin';
-  const canManageDecisions = user.role === 'high_admin' || user.role === 'program_director';
-  const canReviewEvidence = user.role === 'high_admin' || user.role === 'program_director';
-  const canTriggerJobs = user.role === 'high_admin';
-  const isStudent = user.role === 'student';
+  const hasCapability = useCallback(
+    (capability: Capability) => !!activeMembership?.capabilities.includes(capability),
+    [activeMembership],
+  );
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        firebaseUser,
+        memberships,
+        activeTenantId,
         token,
-        personas: SEED_PERSONAS,
-        activePersona,
-        isLoggedIn,
-        switchPersona,
-        loginCustom,
+        isLoggedIn: !!firebaseUser,
+        isLoading,
+        error,
+        isFirebaseConfigured,
         loginWithGoogle,
         logout,
-        getAuthHeaders,
-        canAcademicSignoff,
-        canAdministrativeSignoff,
-        canManageDecisions,
-        canReviewEvidence,
-        canTriggerJobs,
-        isStudent
+        switchTenant,
+        refreshMe,
+        reauthenticate,
+        getToken,
+        apiFetch,
+        hasCapability,
+        canAcademicSignoff: hasCapability('sign_academic'),
+        canAdministrativeSignoff: hasCapability('sign_administrative'),
+        canManageDecisions: hasCapability('edit_decisions'),
+        canReviewEvidence: hasCapability('approve_staging'),
+        canTriggerJobs: hasCapability('run_jobs'),
+        canResetDemo: hasCapability('reset_demo'),
+        isStudent: activeMembership?.role === 'student',
       }}
     >
       {children}
@@ -301,8 +267,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };

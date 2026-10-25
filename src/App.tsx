@@ -1,6 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { UserRole, Institution, OverlayPack, EvidenceClaim, EvidenceStagingItem, DecisionRecord, ScenarioEntry, StakeholderImpact, PredictionRecord, RedFlagCase, PulseSurveyResponse, ShadowAiReport, JobExecutionStatus } from './types';
-import { StakeholderRole } from './types/auth';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import type {
+  Capability,
+  DecisionRecord,
+  EvidenceClaim,
+  EvidenceStagingItem,
+  Institution,
+  JobExecutionStatus,
+  OverlayPack,
+  PredictionRecord,
+  PulseSurveyResponse,
+  RedFlagCase,
+  ScenarioEntry,
+  ShadowAiReport,
+  StakeholderImpact,
+  UserRole,
+} from './types';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Header } from './components/Header';
 import { LandingPageView } from './components/LandingPageView';
@@ -16,26 +30,10 @@ import { GrassrootsInputView } from './components/GrassrootsInputView';
 import { KernelVersionManager } from './components/KernelVersionManager';
 import { JobsAndGovernanceView } from './components/JobsAndGovernanceView';
 import { CompassMasterView } from './components/CompassMasterView';
+import { AdminManagementView } from './components/AdminManagementView';
 import { LegalPage } from './components/LegalPage';
 import { getLegalDocForPath } from './legal/legalDocs';
-import { db } from './services/db';
-import { getActiveKernel } from './kernel/kernelModule';
-
-// AuthContext uses a different role-naming scheme (StakeholderRole) than the
-// rest of the app (UserRole) — this maps between the two rather than forcing
-// every existing component to learn a second role vocabulary.
-function toUserRole(role: StakeholderRole): UserRole {
-  switch (role) {
-    case 'high_admin':
-      return 'leadership';
-    case 'program_director':
-      return 'faculty';
-    case 'student':
-      return 'student';
-    case 'consultant':
-      return 'consultant';
-  }
-}
+import { ApiError } from './services/api';
 
 export default function App() {
   return (
@@ -45,10 +43,6 @@ export default function App() {
   );
 }
 
-// Tracks the current URL path so the app can render a standalone legal page
-// (for example /terms) on a full-page load — the Vercel rewrite and the dev
-// server both serve index.html for these routes, and this reads the path on
-// boot and on browser back/forward.
 function usePathname(): string {
   const [pathname, setPathname] = useState(() => window.location.pathname);
   useEffect(() => {
@@ -59,23 +53,20 @@ function usePathname(): string {
   return pathname;
 }
 
-// Decides landing page vs. workspace, and owns the single shared identity
-// modal instance so there is exactly one way to change identity in the app
-// (the landing page's CTAs and the in-app Header's "Change Identity" button
-// both open this same modal — no separate bypass path either place).
 function ProteusRoot() {
   const pathname = usePathname();
   const legalDoc = getLegalDocForPath(pathname);
+  const { user, isLoggedIn, isLoading, memberships, logout } = useAuth();
   const [view, setView] = useState<'landing' | 'workspace'>('landing');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  // Entering the workspace happens ONLY when the modal reports an actual
-  // identity was confirmed (persona switch or custom demo login) — not
-  // merely when the modal is closed. Dismissing the modal with the X keeps
-  // you on the landing page; it never silently drops you into a default
-  // role's workspace view.
+  useEffect(() => {
+    if (!isLoading && isLoggedIn && memberships.length > 0) setView('workspace');
+    if (!isLoading && !isLoggedIn) setView('landing');
+  }, [isLoading, isLoggedIn, memberships.length]);
+
   const handleIdentityConfirmed = () => {
-    setView('workspace');
+    if (memberships.length > 0) setView('workspace');
   };
 
   if (legalDoc) {
@@ -84,13 +75,39 @@ function ProteusRoot() {
 
   return (
     <>
-      {view === 'landing' && (
-        <LandingPageView onOpenAuthModal={() => setIsAuthModalOpen(true)} />
-      )}
+      {view === 'landing' && <LandingPageView onOpenAuthModal={() => setIsAuthModalOpen(true)} />}
 
-      {view === 'workspace' && (
-        <Workspace onOpenAuthModal={() => setIsAuthModalOpen(true)} />
-      )}
+      {view === 'workspace' &&
+        (user ? (
+          <Workspace onOpenAuthModal={() => setIsAuthModalOpen(true)} />
+        ) : (
+          <div className="flex min-h-screen items-center justify-center bg-slate-900 p-6 text-slate-100">
+            <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-800 p-8 text-center">
+              <h1 className="text-xl font-bold text-white">Institutional access required</h1>
+              <p className="mt-2 text-sm text-slate-400">
+                {isLoggedIn
+                  ? 'Your account is signed in, but no institution has invited this email yet.'
+                  : 'Sign in with your verified institutional Google account to continue.'}
+              </p>
+              <div className="mt-6 flex justify-center gap-3">
+                <button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+                >
+                  Sign in
+                </button>
+                {isLoggedIn && (
+                  <button
+                    onClick={logout}
+                    className="rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-700"
+                  >
+                    Sign out
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
 
       <PersonaAuthModal
         isOpen={isAuthModalOpen}
@@ -101,335 +118,504 @@ function ProteusRoot() {
   );
 }
 
+async function optional<T>(promise: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await promise;
+  } catch {
+    return fallback;
+  }
+}
+
 function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
-  const { user } = useAuth();
+  const {
+    user,
+    apiFetch,
+    switchTenant,
+    hasCapability,
+    canResetDemo,
+    reauthenticate,
+  } = useAuth();
+  const currentTenantId = user!.tenantId;
+  const currentRole: UserRole = user!.role;
 
-  const [currentTenantId, setCurrentTenantId] = useState<string>(user.tenantId || 'inst-1');
   const [activeTab, setActiveTab] = useState<string>('overview');
+  const [profile, setProfile] = useState<Institution | null>(null);
+  const [activeOverlayPack, setActiveOverlayPack] = useState<OverlayPack | null>(null);
+  const [allInstitutions, setAllInstitutions] = useState<Institution[]>([]);
+  const [allOverlayPacks, setAllOverlayPacks] = useState<OverlayPack[]>([]);
 
-  // The dashboard's role always reflects the active demo identity. If the
-  // identity changes (via the Header's "Change Identity" button, which opens
-  // the same shared modal), this follows it rather than going stale.
-  const currentRole: UserRole = toUserRole(user.role);
-  useEffect(() => {
-    if (user.tenantId && user.tenantId !== currentTenantId) {
-      setCurrentTenantId(user.tenantId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user.tenantId]);
+  const [claims, setClaims] = useState<EvidenceClaim[]>([]);
+  const [staging, setStaging] = useState<EvidenceStagingItem[]>([]);
+  const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
+  const [scenarios, setScenarios] = useState<ScenarioEntry[]>([]);
+  const [stakeholderImpacts, setStakeholderImpacts] = useState<StakeholderImpact[]>([]);
+  const [predictions, setPredictions] = useState<PredictionRecord[]>([]);
+  const [redFlags, setRedFlags] = useState<RedFlagCase[]>([]);
+  const [pulseSurveys, setPulseSurveys] = useState<PulseSurveyResponse[]>([]);
+  const [shadowReports, setShadowReports] = useState<ShadowAiReport[]>([]);
+  const [jobs, setJobs] = useState<JobExecutionStatus[]>([]);
 
-  const defaultInst = db.getInstitution('inst-1') || db.institutions[0];
-  const defaultPack = db.overlayPacks.find((p) => p.id === defaultInst.activeOverlayPackId) || db.overlayPacks[0];
-
-  const [profile, setProfile] = useState<Institution>(defaultInst);
-  const [activeOverlayPack, setActiveOverlayPack] = useState<OverlayPack>(defaultPack);
-  const [allInstitutions, setAllInstitutions] = useState<Institution[]>(db.institutions);
-  const [allOverlayPacks, setAllOverlayPacks] = useState<OverlayPack[]>(db.overlayPacks);
-
-  const [claims, setClaims] = useState<EvidenceClaim[]>(db.getClaims('inst-1'));
-  const [staging, setStaging] = useState<EvidenceStagingItem[]>(db.evidenceStaging.filter((s) => s.tenantId === 'inst-1'));
-  const [decisions, setDecisions] = useState<DecisionRecord[]>(db.getDecisions('inst-1'));
-  const [scenarios, setScenarios] = useState<ScenarioEntry[]>(db.scenarios);
-  const [stakeholderImpacts, setStakeholderImpacts] = useState<StakeholderImpact[]>(db.stakeholderImpacts);
-  const [predictions, setPredictions] = useState<PredictionRecord[]>(db.getPredictions('inst-1'));
-  const [redFlags, setRedFlags] = useState<RedFlagCase[]>(db.getRedFlags());
-  const [pulseSurveys, setPulseSurveys] = useState<PulseSurveyResponse[]>(db.pulseSurveys.filter((p) => p.tenantId === 'inst-1'));
-  const [shadowReports, setShadowReports] = useState<ShadowAiReport[]>(db.shadowAiReports.filter((r) => r.tenantId === 'inst-1'));
-  const [jobs, setJobs] = useState<JobExecutionStatus[]>(db.jobStatuses);
-
-  const [kernelVersion, setKernelVersion] = useState(getActiveKernel().version);
-  const [isLoading, setIsLoading] = useState(false);
-  // Deterministic (key-free) mode is the default; the server is the source of truth.
+  const [kernelVersion, setKernelVersion] = useState('1.0');
+  const [isLoading, setIsLoading] = useState(true);
   const [aiEnabled, setAiEnabled] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const loadRequestId = useRef(0);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
+    const requestId = ++loadRequestId.current;
+    setIsLoading(true);
+    setError(null);
     try {
-      const tenantInst = db.getInstitution(currentTenantId) || db.institutions[0];
-      const tenantPack = db.overlayPacks.find((p) => p.id === tenantInst.activeOverlayPackId) || db.overlayPacks[0];
-      setProfile(tenantInst);
-      setActiveOverlayPack(tenantPack);
-      setClaims(db.getClaims(currentTenantId));
-      setStaging(db.evidenceStaging.filter((s) => s.tenantId === currentTenantId));
-      setDecisions(db.getDecisions(currentTenantId));
-      setPredictions(db.getPredictions(currentTenantId));
-      setPulseSurveys(db.pulseSurveys.filter((p) => p.tenantId === currentTenantId));
-      setShadowReports(db.shadowAiReports.filter((r) => r.tenantId === currentTenantId));
+      const [institutions, packs, kernel, appConfig] = await Promise.all([
+        apiFetch<Institution[]>('/institutions'),
+        apiFetch<OverlayPack[]>('/overlay-packs'),
+        apiFetch<{ kernel: { version: string } }>('/kernel'),
+        apiFetch<{ aiEnabled: boolean }>('/config'),
+      ]);
+      if (requestId !== loadRequestId.current) return;
+      setAllInstitutions(institutions);
+      setAllOverlayPacks(packs);
+      setKernelVersion(kernel.kernel.version);
+      setAiEnabled(appConfig.aiEnabled);
+
+      const tenantInstitution =
+        institutions.find((institution) => institution.id === currentTenantId) || null;
+      setProfile(tenantInstitution);
+      setActiveOverlayPack(
+        packs.find((pack) => pack.id === tenantInstitution?.activeOverlayPackId) || packs[0] || null,
+      );
 
       const [
-        profileRes,
-        overlayRes,
-        evidenceRes,
-        decisionsRes,
-        predRes,
-        redRes,
-        inputRes,
-        jobsRes,
-        kernelRes,
-        configRes,
+        claimsData,
+        stagingData,
+        decisionsData,
+        scenariosData,
+        stakeholderData,
+        predictionsData,
+        redFlagsData,
+        pulseData,
+        shadowData,
+        jobsData,
       ] = await Promise.all([
-        fetch(`/api/profile/${currentTenantId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch('/api/overlay-packs').then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch(`/api/evidence/${currentTenantId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch(`/api/decisions/${currentTenantId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch(`/api/predictions/${currentTenantId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch('/api/red-flags').then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch(`/api/input-instruments/${currentTenantId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch('/api/jobs').then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch('/api/kernel').then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch('/api/config').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        hasCapability('read_evidence') ? apiFetch<EvidenceClaim[]>('/evidence') : Promise.resolve([]),
+        hasCapability('approve_staging')
+          ? apiFetch<EvidenceStagingItem[]>('/evidence/staging')
+          : Promise.resolve([]),
+        hasCapability('read_decisions') ? apiFetch<DecisionRecord[]>('/decisions') : Promise.resolve([]),
+        hasCapability('read_decisions')
+          ? apiFetch<ScenarioEntry[]>('/decisions/scenarios')
+          : Promise.resolve([]),
+        hasCapability('read_decisions')
+          ? apiFetch<StakeholderImpact[]>('/decisions/stakeholders')
+          : Promise.resolve([]),
+        hasCapability('read_predictions')
+          ? apiFetch<PredictionRecord[]>('/predictions')
+          : Promise.resolve([]),
+        optional(apiFetch<RedFlagCase[]>('/red-flags'), []),
+        hasCapability('read_all_inputs')
+          ? apiFetch<PulseSurveyResponse[]>('/inputs/pulse')
+          : Promise.resolve([]),
+        hasCapability('read_all_inputs')
+          ? apiFetch<ShadowAiReport[]>('/inputs/shadow-ai')
+          : Promise.resolve([]),
+        hasCapability('read_diagnostics') ? apiFetch<JobExecutionStatus[]>('/jobs') : Promise.resolve([]),
       ]);
 
-      if (profileRes?.profile) setProfile(profileRes.profile);
-      if (profileRes?.activeOverlayPack) setActiveOverlayPack(profileRes.activeOverlayPack);
-      if (profileRes?.allInstitutions) setAllInstitutions(profileRes.allInstitutions);
-      if (overlayRes) setAllOverlayPacks(overlayRes);
-
-      if (evidenceRes?.claims) setClaims(evidenceRes.claims);
-      if (evidenceRes?.staging) setStaging(evidenceRes.staging);
-      if (decisionsRes) setDecisions(decisionsRes);
-      if (predRes) setPredictions(predRes);
-      if (redRes) setRedFlags(redRes);
-      if (inputRes?.pulseSurveys) setPulseSurveys(inputRes.pulseSurveys);
-      if (inputRes?.shadowAiReports) setShadowReports(inputRes.shadowAiReports);
-      if (jobsRes) setJobs(jobsRes);
-      if (kernelRes?.kernel?.version) setKernelVersion(kernelRes.kernel.version);
-      if (typeof configRes?.aiEnabled === 'boolean') setAiEnabled(configRes.aiEnabled);
-
-      if (decisionsRes && decisionsRes.length > 0) {
-        const firstDecId = decisionsRes[0].id;
-        const [scenRes, stkRes] = await Promise.all([
-          fetch(`/api/scenarios/${firstDecId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-          fetch(`/api/stakeholders/${firstDecId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        ]);
-        if (scenRes) setScenarios(scenRes);
-        if (stkRes) setStakeholderImpacts(stkRes);
-      }
+      if (requestId !== loadRequestId.current) return;
+      setClaims(claimsData);
+      setStaging(stagingData);
+      setDecisions(decisionsData);
+      setScenarios(scenariosData);
+      setStakeholderImpacts(stakeholderData);
+      setPredictions(predictionsData);
+      setRedFlags(redFlagsData);
+      setPulseSurveys(pulseData);
+      setShadowReports(shadowData);
+      setJobs(jobsData);
     } catch (err) {
-      console.warn('API sync deferred; active dataset loaded from database cache:', err);
+      if (requestId !== loadRequestId.current) return;
+      setError(err instanceof Error ? err.message : 'Could not load institutional data.');
     } finally {
-      setIsLoading(false);
+      if (requestId === loadRequestId.current) setIsLoading(false);
+    }
+  }, [apiFetch, currentTenantId, hasCapability]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    const requiredCapabilities: Record<string, Capability> = {
+      compass_master: 'read_diagnostics',
+      evidence: 'read_evidence',
+      scenarios: 'read_decisions',
+      stakeholders: 'read_decisions',
+      predictions: 'read_predictions',
+      input: 'submit_input',
+      jobs: 'read_diagnostics',
+      admin: 'manage_members',
+    };
+    const required = requiredCapabilities[activeTab];
+    if (required && !hasCapability(required)) setActiveTab('overview');
+  }, [activeTab, hasCapability]);
+
+  const showError = (err: unknown) => {
+    setError(err instanceof Error ? err.message : 'The request could not be completed.');
+  };
+
+  const handleUpdateProfile = async (updated: Institution) => {
+    try {
+      const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...input } = updated;
+      const saved = await apiFetch<Institution>(`/institutions/${currentTenantId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      });
+      setProfile(saved);
+      setAllInstitutions((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
+    } catch (err) {
+      showError(err);
+      throw err;
     }
   };
 
-  useEffect(() => {
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTenantId]);
-
-  const handleUpdateProfile = async (updated: Institution) => {
-    const res = await fetch(`/api/profile/${currentTenantId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updated),
-    }).then((r) => r.json());
-
-    setProfile(res);
-  };
-
-  const handleAddClaim = async (claim: Omit<EvidenceClaim, 'id' | 'dateAdded'>) => {
-    const newClaim = await fetch('/api/evidence', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(claim),
-    }).then((r) => r.json());
-
-    setClaims((prev) => [newClaim, ...prev]);
+  const handleAddClaim = async (claim: Omit<EvidenceClaim, 'id' | 'dateAdded' | 'tenantId'>) => {
+    try {
+      const created = await apiFetch<EvidenceClaim>('/evidence', {
+        method: 'POST',
+        body: JSON.stringify(claim),
+      });
+      setClaims((prev) => [created, ...prev]);
+    } catch (err) {
+      showError(err);
+      throw err;
+    }
   };
 
   const handleApproveStaging = async (stagingId: string) => {
-    const res = await fetch(`/api/evidence/staging/${stagingId}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reviewer: `${currentRole} User` }),
-    }).then((r) => r.json());
-
-    if (res.claim) {
-      setClaims((prev) => [res.claim, ...prev]);
-      setStaging((prev) => prev.map((s) => (s.id === stagingId ? { ...s, status: 'approved' } : s)));
+    try {
+      const claim = await apiFetch<EvidenceClaim>(`/evidence/staging/${stagingId}/approve`, {
+        method: 'POST',
+      });
+      setClaims((prev) => [claim, ...prev]);
+      setStaging((prev) => prev.map((item) => (item.id === stagingId ? { ...item, status: 'approved' } : item)));
+    } catch (err) {
+      showError(err);
     }
   };
 
   const handleRejectStaging = async (stagingId: string, reason: string) => {
-    await fetch(`/api/evidence/staging/${stagingId}/reject`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason, reviewer: `${currentRole} User` }),
-    });
-
-    setStaging((prev) => prev.map((s) => (s.id === stagingId ? { ...s, status: 'rejected' } : s)));
+    try {
+      await apiFetch(`/evidence/staging/${stagingId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      });
+      setStaging((prev) => prev.map((item) => (item.id === stagingId ? { ...item, status: 'rejected' } : item)));
+    } catch (err) {
+      showError(err);
+    }
   };
 
-  const handleUpdateDisposition = async (id: string, disposition: any, notes: string, setBy: string) => {
-    const res = await fetch(`/api/decisions/${id}/disposition`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ disposition, notes, setBy }),
-    }).then((r) => r.json());
-
-    setDecisions((prev) => prev.map((d) => (d.id === id ? res : d)));
+  const handleUpdateDisposition = async (
+    id: string,
+    disposition: DecisionRecord['humanDisposition'],
+    notes: string,
+  ) => {
+    const decision = decisions.find((item) => item.id === id);
+    if (!disposition || disposition === 'pending') {
+      throw new Error('Choose accepted, rejected, or modified before saving a disposition.');
+    }
+    try {
+      const updated = await apiFetch<DecisionRecord>(`/decisions/${id}/disposition`, {
+        method: 'PATCH',
+        body: JSON.stringify({ disposition, notes, version: decision?.version }),
+      });
+      setDecisions((prev) => prev.map((item) => (item.id === id ? updated : item)));
+    } catch (err) {
+      showError(err);
+      throw err;
+    }
   };
 
-  const handleUpdateRecommendedAction = async (id: string, recommendedAction: any, notes: string) => {
-    const res = await fetch(`/api/decisions/${id}/recommended-action`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recommendedAction, notes }),
-    }).then((r) => r.json());
-
-    setDecisions((prev) => prev.map((d) => (d.id === id ? res : d)));
+  const handleUpdateRecommendedAction = async (
+    id: string,
+    recommendedAction: DecisionRecord['recommendedAction'],
+    notes: string,
+  ) => {
+    const decision = decisions.find((item) => item.id === id);
+    if (!recommendedAction) {
+      throw new Error('Choose a recommended action before saving.');
+    }
+    try {
+      const updated = await apiFetch<DecisionRecord>(`/decisions/${id}/recommended-action`, {
+        method: 'PATCH',
+        body: JSON.stringify({ recommendedAction, notes, version: decision?.version }),
+      });
+      setDecisions((prev) => prev.map((item) => (item.id === id ? updated : item)));
+    } catch (err) {
+      showError(err);
+      throw err;
+    }
   };
 
   const handleUpdateStatus = async (id: string, status: DecisionRecord['implementationStatus']) => {
-    const res = await fetch(`/api/decisions/${id}/status`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to update status');
-    }
-
-    setDecisions((prev) => prev.map((d) => (d.id === id ? data : d)));
-  };
-
-  const handleToggleGate = async (id: string, passed: boolean) => {
-    const res = await fetch(`/api/decisions/${id}/gate`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ passed }),
-    }).then((r) => r.json());
-
-    setDecisions((prev) => prev.map((d) => (d.id === id ? res : d)));
-  };
-
-  const handleAddDecision = (decision: Omit<DecisionRecord, 'id' | 'createdAt' | 'updatedAt'>) => {
-    fetch('/api/decisions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(decision),
-    })
-      .then((r) => r.json())
-      .then((newDec) => {
-        setDecisions((prev) => [newDec, ...prev]);
+    const decision = decisions.find((item) => item.id === id);
+    try {
+      const updated = await apiFetch<DecisionRecord>(`/decisions/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, version: decision?.version }),
       });
+      setDecisions((prev) => prev.map((item) => (item.id === id ? updated : item)));
+    } catch (err) {
+      showError(err);
+      throw err;
+    }
+  };
+
+  const handleUpdateGovernanceSignoff = async (
+    id: string,
+    signoffType: 'academic' | 'administrative',
+    status: 'approved' | 'rejected' | 'pending' | 'conditional',
+    notes: string,
+    _signedBy: string,
+    version?: number,
+  ) => {
+    const decision = decisions.find((item) => item.id === id);
+    try {
+      const updated = await apiFetch<DecisionRecord>(`/decisions/${id}/signoff`, {
+        method: 'POST',
+        body: JSON.stringify({
+          signoffType,
+          status,
+          resolutionNotes: notes,
+          version: version ?? decision?.version,
+        }),
+      });
+      setDecisions((prev) => prev.map((item) => (item.id === id ? updated : item)));
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'REAUTH_REQUIRED') {
+        await reauthenticate();
+        throw new Error('Reauthentication complete. Submit the signoff again to record it.');
+      }
+      showError(err);
+      throw err;
+    }
+  };
+
+  const handleAddDecision = async (
+    decision: Pick<
+      DecisionRecord,
+      | 'title'
+      | 'summary'
+      | 'domain'
+      | 'touchesEnrollmentOrGrading'
+      | 'isAiDrafted'
+      | 'generationMode'
+      | 'kernelSectionIds'
+    >,
+  ) => {
+    try {
+      const created = await apiFetch<DecisionRecord>('/decisions', {
+        method: 'POST',
+        body: JSON.stringify(decision),
+      });
+      setDecisions((prev) => [created, ...prev]);
+    } catch (err) {
+      showError(err);
+      throw err;
+    }
   };
 
   const handleGenerateAiScenarios = async (decision: DecisionRecord) => {
-    const res = await fetch('/api/ai/draft-scenarios', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        decisionTitle: decision.title,
-        decisionSummary: decision.summary,
-        domain: decision.domain,
-        institutionName: profile?.name || 'Atlas Global University',
-      }),
-    }).then((r) => r.json());
-
-    if (res.scenarios) {
-      const formatted = res.scenarios.map((s: any) => ({
-        ...s,
-        decisionId: decision.id,
-      }));
-
-      const added = await fetch('/api/scenarios', {
+    try {
+      const draft = await apiFetch<{ scenarios: Omit<ScenarioEntry, 'id' | 'decisionId'>[] }>(
+        '/ai/draft-scenarios',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            decisionTitle: decision.title,
+            decisionSummary: decision.summary,
+            domain: decision.domain,
+            institutionName: profile?.name || '',
+          }),
+        },
+      );
+      const added = await apiFetch<ScenarioEntry[]>(`/decisions/${decision.id}/scenarios`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formatted),
-      }).then((r) => r.json());
-
+        body: JSON.stringify({
+          scenarios: draft.scenarios.map((scenario) => ({
+            scenarioType: scenario.scenarioType,
+            title: scenario.title,
+            description: scenario.description,
+            keyAssumptions: scenario.keyAssumptions,
+            nonTechDrivers: scenario.nonTechDrivers,
+            reversibilityRating: scenario.reversibilityRating,
+            isAiDrafted: scenario.isAiDrafted,
+            generationMode: scenario.generationMode,
+          })),
+        }),
+      });
       setScenarios((prev) => [...prev, ...added]);
+    } catch (err) {
+      showError(err);
+      throw err;
     }
   };
 
-  const handleAddPrediction = async (pred: Omit<PredictionRecord, 'id' | 'dateMade'>) => {
-    const res = await fetch('/api/predictions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(pred),
-    }).then((r) => r.json());
-
-    setPredictions((prev) => [res, ...prev]);
+  const handleAddPrediction = async (
+    prediction: Pick<PredictionRecord, 'predictionText' | 'targetDate' | 'scopeLevel'>,
+  ) => {
+    try {
+      const created = await apiFetch<PredictionRecord>('/predictions', {
+        method: 'POST',
+        body: JSON.stringify(prediction),
+      });
+      setPredictions((prev) => [created, ...prev]);
+    } catch (err) {
+      showError(err);
+      throw err;
+    }
   };
 
   const handleResolvePrediction = async (
     id: string,
     resolutionStatus: PredictionRecord['resolutionStatus'],
     actualOutcome: string,
-    lessonsLearned: string
+    lessonsLearned: string,
   ) => {
-    const res = await fetch(`/api/predictions/${id}/resolve`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resolutionStatus, actualOutcome, lessonsLearned }),
-    }).then((r) => r.json());
-
-    setPredictions((prev) => prev.map((p) => (p.id === id ? res : p)));
+    try {
+      const updated = await apiFetch<PredictionRecord>(`/predictions/${id}/resolve`, {
+        method: 'PATCH',
+        body: JSON.stringify({ resolutionStatus, actualOutcome, lessonsLearned }),
+      });
+      setPredictions((prev) => prev.map((item) => (item.id === id ? updated : item)));
+    } catch (err) {
+      showError(err);
+      throw err;
+    }
   };
 
-  const handleAddPulse = async (pulse: Omit<PulseSurveyResponse, 'id' | 'createdAt'>) => {
-    const res = await fetch('/api/input-instruments/pulse', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(pulse),
-    }).then((r) => r.json());
-
-    setPulseSurveys((prev) => [res, ...prev]);
+  const handleAddPulse = async (
+    pulse: Pick<
+      PulseSurveyResponse,
+      | 'role'
+      | 'disciplineOrProgram'
+      | 'aiUsageFrequency'
+      | 'primaryToolsUsed'
+      | 'perceivedAcademicValue'
+      | 'perceivedIntegrityRisk'
+      | 'comments'
+    >,
+  ) => {
+    try {
+      const created = await apiFetch<PulseSurveyResponse>('/inputs/pulse', {
+        method: 'POST',
+        body: JSON.stringify(pulse),
+      });
+      setPulseSurveys((prev) => [created, ...prev]);
+    } catch (err) {
+      showError(err);
+      throw err;
+    }
   };
 
-  const handleAddShadowReport = async (report: Omit<ShadowAiReport, 'id' | 'createdAt' | 'status'>) => {
-    const res = await fetch('/api/input-instruments/shadow-ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(report),
-    }).then((r) => r.json());
-
-    setShadowReports((prev) => [res, ...prev]);
+  const handleAddShadowReport = async (
+    report: Pick<
+      ShadowAiReport,
+      'reportedByRole' | 'departmentOrCourse' | 'toolOrUseName' | 'description' | 'perceivedRiskType'
+    >,
+  ) => {
+    try {
+      const created = await apiFetch<ShadowAiReport>('/inputs/shadow-ai', {
+        method: 'POST',
+        body: JSON.stringify(report),
+      });
+      setShadowReports((prev) => [created, ...prev]);
+    } catch (err) {
+      showError(err);
+      throw err;
+    }
   };
 
   const handleRunJob = async (jobId: JobExecutionStatus['jobId']) => {
-    const res = await fetch(`/api/jobs/${jobId}/run`, {
-      method: 'POST',
-    }).then((r) => r.json());
-
-    setJobs((prev) => prev.map((j) => (j.jobId === jobId ? res : j)));
-    if (jobId === 'evidence_refresh') {
-      const ev = await fetch(`/api/evidence/${currentTenantId}`).then((r) => r.json());
-      setStaging(ev.staging || []);
+    try {
+      const updated = await apiFetch<JobExecutionStatus>('/jobs/run', {
+        method: 'POST',
+        body: JSON.stringify({ jobId }),
+      });
+      setJobs((prev) => prev.map((item) => (item.jobId === jobId ? updated : item)));
+      if (jobId === 'evidence_refresh' && hasCapability('approve_staging')) {
+        setStaging(await apiFetch<EvidenceStagingItem[]>('/evidence/staging'));
+      }
+    } catch (err) {
+      showError(err);
+      throw err;
     }
   };
 
   if (isLoading && !profile) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center p-6 font-sans">
-        <div className="text-center space-y-3 animate-pulse">
-          <div className="w-12 h-12 bg-indigo-600 rounded-2xl mx-auto flex items-center justify-center text-white font-bold text-xl font-serif shadow-lg shadow-indigo-500/30">
+      <div className="flex min-h-screen items-center justify-center bg-slate-900 p-6 font-sans text-slate-100">
+        <div className="animate-pulse space-y-3 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 font-serif text-xl font-bold text-white shadow-lg shadow-indigo-500/30">
             P
           </div>
-          <h2 className="text-lg font-bold text-white font-serif">Booting Proteus Compass OS...</h2>
-          <p className="text-xs text-slate-400">Loading multi-tenant data, kernel rules, and overlay packs...</p>
+          <h2 className="font-serif text-lg font-bold text-white">Loading Proteus Compass OS…</h2>
+          <p className="text-xs text-slate-400">Loading institutional data, kernel rules, and overlay packs.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!profile || !activeOverlayPack) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-900 p-6 text-slate-100">
+        <div className="max-w-lg rounded-xl border border-rose-800 bg-rose-950/40 p-6 text-center">
+          <h2 className="font-bold text-rose-200">Institutional data unavailable</h2>
+          <p className="mt-2 text-sm text-rose-300">{error || 'The active institution could not be loaded.'}</p>
+          <button
+            onClick={() => void loadData()}
+            className="mt-4 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500"
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans selection:bg-indigo-500 selection:text-white pb-16">
+    <div className="min-h-screen bg-[#f8fafc] pb-16 font-sans text-slate-900 selection:bg-indigo-500 selection:text-white">
       <Header
         currentRole={currentRole}
         onOpenAuthModal={onOpenAuthModal}
         currentTenantId={currentTenantId}
-        setCurrentTenantId={setCurrentTenantId}
+        setCurrentTenantId={switchTenant}
         institutions={allInstitutions}
         activeOverlayPack={activeOverlayPack}
         kernelVersion={kernelVersion}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        canResetDemo={canResetDemo}
+        canManageMembers={hasCapability('manage_members')}
+        capabilities={user!.capabilities}
+        onResetDemo={async () => {
+          await apiFetch('/demo/reset', { method: 'POST' });
+          await loadData();
+        }}
       />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      {error && (
+        <div className="mx-auto mt-4 max-w-7xl px-4 sm:px-6">
+          <div className="flex items-start justify-between gap-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            <span>{error}</span>
+            <button onClick={() => setError(null)} className="font-bold text-rose-600">
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         {activeTab === 'overview' && (
           <DashboardOverview
             institution={profile}
@@ -477,13 +663,16 @@ function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
             decisions={decisions}
             scenarios={scenarios}
             userRole={currentRole}
+            institution={profile}
             onUpdateDisposition={handleUpdateDisposition}
             onUpdateRecommendedAction={handleUpdateRecommendedAction}
             onUpdateStatus={handleUpdateStatus}
-            onToggleGate={handleToggleGate}
             onGenerateAiScenarios={handleGenerateAiScenarios}
             onAddDecision={handleAddDecision}
+            onUpdateGovernanceSignoff={handleUpdateGovernanceSignoff}
             aiEnabled={aiEnabled}
+            canSignAcademic={hasCapability('sign_academic')}
+            canSignAdministrative={hasCapability('sign_administrative')}
           />
         )}
 
@@ -498,9 +687,6 @@ function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
         {activeTab === 'predictions' && (
           <PredictionTrackerView
             predictions={predictions}
-            userRole={currentRole}
-            currentUserId={user.uid}
-            currentUserName={user.displayName}
             onAddPrediction={handleAddPrediction}
             onResolvePrediction={handleResolvePrediction}
           />
@@ -524,6 +710,8 @@ function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
             <KernelVersionManager />
           </div>
         )}
+
+        {activeTab === 'admin' && hasCapability('manage_members') && <AdminManagementView />}
       </main>
     </div>
   );

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { EvidenceClaim, EvidenceStagingItem, ConfidenceTier, UserRole } from '../types';
+import { useAuth } from '../context/AuthContext';
 import {
   FileText,
   ExternalLink,
@@ -19,9 +20,9 @@ interface EvidenceLedgerViewProps {
   claims: EvidenceClaim[];
   staging: EvidenceStagingItem[];
   userRole: UserRole;
-  onAddClaim: (claim: Omit<EvidenceClaim, 'id' | 'dateAdded'>) => void;
-  onApproveStaging: (stagingId: string) => void;
-  onRejectStaging: (stagingId: string, reason: string) => void;
+  onAddClaim: (claim: Omit<EvidenceClaim, 'id' | 'dateAdded' | 'tenantId'>) => Promise<void>;
+  onApproveStaging: (stagingId: string) => Promise<void>;
+  onRejectStaging: (stagingId: string, reason: string) => Promise<void>;
 }
 
 export const EvidenceLedgerView: React.FC<EvidenceLedgerViewProps> = ({
@@ -32,6 +33,7 @@ export const EvidenceLedgerView: React.FC<EvidenceLedgerViewProps> = ({
   onApproveStaging,
   onRejectStaging,
 }) => {
+  const { hasCapability } = useAuth();
   const [activeSubTab, setActiveSubTab] = useState<'live' | 'staging'>('live');
   const [filterConfidence, setFilterConfidence] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -45,8 +47,10 @@ export const EvidenceLedgerView: React.FC<EvidenceLedgerViewProps> = ({
   const [datePublished, setDatePublished] = useState(new Date().toISOString().split('T')[0]);
   const [discipline, setDiscipline] = useState('');
   const [formError, setFormError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
-  const canEdit = userRole === 'leadership' || userRole === 'consultant';
+  const canEdit = hasCapability('manage_evidence');
+  const canApproveStaging = hasCapability('approve_staging');
   const pendingStagingCount = staging.filter((s) => s.status === 'pending_review').length;
 
   const filteredClaims = claims.filter((claim) => {
@@ -62,7 +66,7 @@ export const EvidenceLedgerView: React.FC<EvidenceLedgerViewProps> = ({
     return true;
   });
 
-  const handleCreateClaim = (e: React.FormEvent) => {
+  const handleCreateClaim = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
 
@@ -77,9 +81,9 @@ export const EvidenceLedgerView: React.FC<EvidenceLedgerViewProps> = ({
       return;
     }
 
+    setIsSaving(true);
     try {
-      onAddClaim({
-        tenantId: 'inst-1',
+      await onAddClaim({
         claimText,
         sourceUrl,
         sourceName: sourceName || 'External Source',
@@ -94,8 +98,10 @@ export const EvidenceLedgerView: React.FC<EvidenceLedgerViewProps> = ({
       setClaimText('');
       setSourceUrl('');
       setSourceName('');
-    } catch (err: any) {
-      setFormError(err.message);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Could not save the claim.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -305,7 +311,7 @@ export const EvidenceLedgerView: React.FC<EvidenceLedgerViewProps> = ({
                     </a>
                   </div>
 
-                  {item.status === 'pending_review' && canEdit && (
+                  {item.status === 'pending_review' && canApproveStaging && (
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => onApproveStaging(item.id)}
@@ -434,9 +440,10 @@ export const EvidenceLedgerView: React.FC<EvidenceLedgerViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-sm"
+                  disabled={isSaving}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-60"
                 >
-                  Save Claim to Ledger
+                  {isSaving ? 'Saving…' : 'Save Claim to Ledger'}
                 </button>
               </div>
             </form>

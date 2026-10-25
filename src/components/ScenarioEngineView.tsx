@@ -21,6 +21,7 @@ import {
   Cpu,
 } from 'lucide-react';
 import { AuditDossierModal } from './AuditDossierModal';
+import { useAuth } from '../context/AuthContext';
 
 interface ScenarioEngineViewProps {
   decisions: DecisionRecord[];
@@ -30,17 +31,30 @@ interface ScenarioEngineViewProps {
   onUpdateDisposition: (id: string, disposition: HumanDisposition, notes: string, setBy: string) => void;
   onUpdateRecommendedAction: (id: string, recommendedAction: RecommendedAction, notes: string) => void;
   onUpdateStatus: (id: string, status: DecisionRecord['implementationStatus']) => void;
-  onToggleGate: (id: string, passed: boolean) => void;
   onGenerateAiScenarios: (decision: DecisionRecord) => Promise<void>;
-  onAddDecision: (decision: Omit<DecisionRecord, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onAddDecision: (
+    decision: Pick<
+      DecisionRecord,
+      | 'title'
+      | 'summary'
+      | 'domain'
+      | 'touchesEnrollmentOrGrading'
+      | 'isAiDrafted'
+      | 'generationMode'
+      | 'kernelSectionIds'
+    >,
+  ) => Promise<void>;
   aiEnabled: boolean;
   onUpdateGovernanceSignoff?: (
     id: string,
     signoffType: 'academic' | 'administrative',
     status: 'approved' | 'rejected' | 'pending' | 'conditional',
     notes: string,
-    signedBy: string
+    signedBy: string,
+    version?: number
   ) => Promise<void> | void;
+  canSignAcademic?: boolean;
+  canSignAdministrative?: boolean;
 }
 
 export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
@@ -51,12 +65,14 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
   onUpdateDisposition,
   onUpdateRecommendedAction,
   onUpdateStatus,
-  onToggleGate,
   onGenerateAiScenarios,
   onAddDecision,
   aiEnabled,
   onUpdateGovernanceSignoff,
+  canSignAcademic = false,
+  canSignAdministrative = false,
 }) => {
+  const { user, apiFetch, hasCapability } = useAuth();
   const [selectedDecisionId, setSelectedDecisionId] = useState<string>(decisions[0]?.id || '');
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -78,7 +94,6 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
   const [editingSignoffType, setEditingSignoffType] = useState<'academic' | 'administrative' | null>(null);
   const [signoffStatus, setSignoffStatus] = useState<'approved' | 'rejected' | 'pending' | 'conditional'>('approved');
   const [signoffNotes, setSignoffNotes] = useState('');
-  const [signoffSigner, setSignoffSigner] = useState('');
 
   // New Decision Modal
   const [showNewModal, setShowNewModal] = useState(false);
@@ -86,8 +101,13 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
   const [newSummary, setNewSummary] = useState('');
   const [newDomain, setNewDomain] = useState<DecisionRecord['domain']>('grading_assessment');
   const [newTouches, setNewTouches] = useState(true);
+  const [createError, setCreateError] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
 
-  const canEdit = userRole === 'leadership' || userRole === 'consultant' || userRole === 'faculty';
+  const canCreate = hasCapability('create_decisions');
+  const canEdit = hasCapability('edit_decisions');
+  const canSetDisposition = hasCapability('set_disposition');
+  const canImplement = hasCapability('transition_implemented');
   const selectedDecision = decisions.find((d) => d.id === selectedDecisionId) || decisions[0];
   const decisionScenarios = scenarios.filter((s) => s.decisionId === selectedDecision?.id);
 
@@ -136,11 +156,11 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
         editingSignoffType,
         signoffStatus,
         signoffNotes || `Action confirmed by ${editingSignoffType === 'academic' ? academicBodyLabel : adminBodyLabel}.`,
-        signoffSigner || (editingSignoffType === 'academic' ? 'Prof. Marcus Thorne, Senate Chair' : 'Dr. Evelyn Vance, Provost')
+        user?.displayName || '',
+        selectedDecision.version
       );
       setEditingSignoffType(null);
       setSignoffNotes('');
-      setSignoffSigner('');
     } catch (err: any) {
       setErrorMsg(err.message);
     }
@@ -150,11 +170,7 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
     setLoadingDossier(true);
     setErrorMsg('');
     try {
-      const res = await fetch(`/api/decisions/${decisionId}/dossier`);
-      if (!res.ok) {
-        throw new Error('Failed to generate audit dossier');
-      }
-      const data = await res.json();
+      const data = await apiFetch<AuditDossierData>(`/decisions/${decisionId}/dossier`);
       setActiveDossier(data);
     } catch (err: any) {
       setErrorMsg('Error generating Audit Dossier: ' + err.message);
@@ -175,44 +191,31 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
     }
   };
 
-  const handleCreateDecision = (e: React.FormEvent) => {
+  const handleCreateDecision = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCreateError('');
     if (!newTitle.trim()) return;
 
-    onAddDecision({
-      tenantId: institution?.id || 'inst-1',
-      title: newTitle,
-      summary: newSummary,
-      domain: newDomain,
-      touchesEnrollmentOrGrading: newTouches,
-      humanApprovalGatePassed: false,
-      humanDisposition: null,
-      recommendedAction: null,
-      implementationStatus: 'under_review',
-      isAiDrafted: aiEnabled,
-      generationMode: aiEnabled ? 'ai' : 'deterministic',
-      kernelSectionIds: ['II', 'V', 'VIII', 'XVI', 'XXX'],
-      academicSignoff: {
-        signoffType: 'academic',
-        bodyName: academicBodyLabel,
-        signedBy: null,
-        signedAt: null,
-        status: 'pending',
-        resolutionNotes: 'Awaiting faculty governance plenary referral.'
-      },
-      administrativeSignoff: {
-        signoffType: 'administrative',
-        bodyName: adminBodyLabel,
-        signedBy: null,
-        signedAt: null,
-        status: 'pending',
-        resolutionNotes: 'Awaiting executive academic review.'
-      }
-    });
+    setIsCreating(true);
+    try {
+      await onAddDecision({
+        title: newTitle,
+        summary: newSummary,
+        domain: newDomain,
+        touchesEnrollmentOrGrading: newTouches,
+        isAiDrafted: aiEnabled,
+        generationMode: aiEnabled ? 'ai' : 'deterministic',
+        kernelSectionIds: ['II', 'V', 'VIII', 'XVI', 'XXX'],
+      });
 
-    setShowNewModal(false);
-    setNewTitle('');
-    setNewSummary('');
+      setShowNewModal(false);
+      setNewTitle('');
+      setNewSummary('');
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Could not create the decision.');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const getRecommendedActionBadge = (action: RecommendedAction) => {
@@ -296,10 +299,13 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
             </button>
           )}
 
-          {canEdit && (
+          {canCreate && (
             <button
-              onClick={() => setShowNewModal(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-xl transition-colors flex items-center gap-1.5 font-bold shadow-sm"
+              onClick={() => {
+                setCreateError('');
+                setShowNewModal(true);
+              }}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
             >
               <Plus className="w-4 h-4" /> Propose AI Initiative
             </button>
@@ -479,13 +485,12 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
 
                     <div className="text-[10px] text-slate-500 font-mono flex justify-between items-center pt-1 border-t border-slate-100">
                       <span>Signer: {selectedDecision.academicSignoff?.signedBy || 'Pending Plenary'}</span>
-                      {canEdit && (
+                      {canSignAcademic && (
                         <button
                           onClick={() => {
                             setEditingSignoffType('academic');
                             setSignoffStatus(selectedDecision.academicSignoff?.status || 'approved');
                             setSignoffNotes(selectedDecision.academicSignoff?.resolutionNotes || '');
-                            setSignoffSigner(selectedDecision.academicSignoff?.signedBy || 'Prof. Marcus Thorne, Senate Chair');
                           }}
                           className="text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
                         >
@@ -524,13 +529,12 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
 
                     <div className="text-[10px] text-slate-500 font-mono flex justify-between items-center pt-1 border-t border-slate-100">
                       <span>Signer: {selectedDecision.administrativeSignoff?.signedBy || 'Pending Provost'}</span>
-                      {canEdit && (
+                      {canSignAdministrative && (
                         <button
                           onClick={() => {
                             setEditingSignoffType('administrative');
                             setSignoffStatus(selectedDecision.administrativeSignoff?.status || 'approved');
                             setSignoffNotes(selectedDecision.administrativeSignoff?.resolutionNotes || '');
-                            setSignoffSigner(selectedDecision.administrativeSignoff?.signedBy || 'Dr. Evelyn Vance, Provost');
                           }}
                           className="text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
                         >
@@ -573,14 +577,11 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
                       </div>
 
                       <div>
-                        <label className="text-slate-700 font-bold block mb-1">Official Signer Name & Title</label>
-                        <input
-                          type="text"
-                          value={signoffSigner}
-                          onChange={(e) => setSignoffSigner(e.target.value)}
-                          placeholder="e.g. Prof. Marcus Thorne, Senate Chair"
-                          className="w-full bg-white border border-slate-200 rounded p-1.5 focus:border-indigo-500 font-medium"
-                        />
+                        <label className="text-slate-700 font-bold block mb-1">Authenticated Signer</label>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-1.5 font-medium text-slate-700">
+                          {user?.displayName || user?.email || 'Verified account'}
+                        </div>
+                        <p className="mt-1 text-[10px] text-slate-500">Recorded from your verified session.</p>
                       </div>
 
                       <div>
@@ -650,14 +651,7 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
                       >
                         {selectedDecision.humanApprovalGatePassed ? 'Gate Passed (Approved)' : 'Gate Active (Hard Block)'}
                       </span>
-                      {canEdit && (
-                        <button
-                          onClick={() => onToggleGate(selectedDecision.id, !selectedDecision.humanApprovalGatePassed)}
-                          className="text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-800 px-2 py-0.5 rounded font-mono font-bold"
-                        >
-                          Toggle
-                        </button>
-                      )}
+                      <span className="text-[10px] font-mono text-slate-500">Derived from dual signoffs</span>
                     </div>
                   ) : (
                     <span className="text-slate-500 font-medium">Not Applicable (Does not touch grading/enrollment)</span>
@@ -666,7 +660,7 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
               </div>
 
               {/* Human Disposition Form */}
-              {canEdit && (
+              {canSetDisposition && (
                 <form onSubmit={handleApplyDisposition} className="bg-slate-50/80 p-4 rounded-xl border border-slate-200 space-y-3">
                   <h4 className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-indigo-600" /> Set Human Strategic Disposition (Mandatory)
@@ -701,13 +695,15 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
 
                   <div className="flex justify-between items-center pt-2">
                     <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleStatusChange('implemented')}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded font-bold transition-colors shadow-sm"
-                      >
-                        Transition to Implemented
-                      </button>
+                      {canImplement && (
+                        <button
+                          type="button"
+                          onClick={() => handleStatusChange('implemented')}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded font-bold transition-colors shadow-sm"
+                        >
+                          Transition to Implemented
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleStatusChange('shelved')}
@@ -903,6 +899,11 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
               <Plus className="w-5 h-5 text-indigo-600" /> Propose New AI Initiative
             </h3>
 
+            {createError && (
+              <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-rose-900 text-xs">
+                {createError}
+              </div>
+            )}
             <form onSubmit={handleCreateDecision} className="space-y-4 text-xs">
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Title</label>
@@ -970,9 +971,10 @@ export const ScenarioEngineView: React.FC<ScenarioEngineViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-sm"
+                  disabled={isCreating}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-sm disabled:opacity-60"
                 >
-                  Submit for Deliberation
+                  {isCreating ? 'Proposing…' : 'Propose Initiative'}
                 </button>
               </div>
             </form>

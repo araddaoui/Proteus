@@ -1,3 +1,6 @@
-import app from '../server.js';
+import { createApp } from '../server/app.js';
+import { assertRuntimeConfig } from '../server/config.js';
 
-export default app;
+assertRuntimeConfig();
+
+export default createApp();

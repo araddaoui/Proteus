@@ -6,8 +6,24 @@ interface GrassrootsInputViewProps {
   pulseSurveys: PulseSurveyResponse[];
   shadowReports: ShadowAiReport[];
   userRole: UserRole;
-  onAddPulse: (pulse: Omit<PulseSurveyResponse, 'id' | 'createdAt'>) => void;
-  onAddShadowReport: (report: Omit<ShadowAiReport, 'id' | 'createdAt' | 'status'>) => void;
+  onAddPulse: (
+    pulse: Pick<
+      PulseSurveyResponse,
+      | 'role'
+      | 'disciplineOrProgram'
+      | 'aiUsageFrequency'
+      | 'primaryToolsUsed'
+      | 'perceivedAcademicValue'
+      | 'perceivedIntegrityRisk'
+      | 'comments'
+    >,
+  ) => Promise<void>;
+  onAddShadowReport: (
+    report: Pick<
+      ShadowAiReport,
+      'reportedByRole' | 'departmentOrCourse' | 'toolOrUseName' | 'description' | 'perceivedRiskType'
+    >,
+  ) => Promise<void>;
 }
 
 export const GrassrootsInputView: React.FC<GrassrootsInputViewProps> = ({
@@ -28,6 +44,8 @@ export const GrassrootsInputView: React.FC<GrassrootsInputViewProps> = ({
   const [riskRating, setRiskRating] = useState(3);
   const [pulseComments, setPulseComments] = useState('');
   const [pulseSuccess, setPulseSuccess] = useState(false);
+  const [pulseError, setPulseError] = useState('');
+  const [pulseSubmitting, setPulseSubmitting] = useState(false);
 
   // Shadow AI / Breakdown Report State
   const [deptName, setDeptName] = useState('');
@@ -35,42 +53,63 @@ export const GrassrootsInputView: React.FC<GrassrootsInputViewProps> = ({
   const [breakdownDesc, setBreakdownDesc] = useState('');
   const [riskType, setRiskType] = useState<ShadowAiReport['perceivedRiskType']>('unapproved_grading');
   const [reportSuccess, setReportSuccess] = useState(false);
+  const [reportError, setReportError] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
 
-  const handleSubmitPulse = (e: React.FormEvent) => {
+  const handleSubmitPulse = async (e: React.FormEvent) => {
     e.preventDefault();
-    onAddPulse({
-      tenantId: 'inst-1',
-      role: pulseRole,
-      disciplineOrProgram: discipline || 'General Academic',
-      aiUsageFrequency: frequency,
-      primaryToolsUsed: toolsInput.split(',').map((t) => t.trim()),
-      perceivedAcademicValue: valueRating,
-      perceivedIntegrityRisk: riskRating,
-      comments: pulseComments,
-    });
+    setPulseError('');
+    setPulseSuccess(false);
+    setPulseSubmitting(true);
+    try {
+      await onAddPulse({
+        role: pulseRole,
+        disciplineOrProgram: discipline || 'General Academic',
+        aiUsageFrequency: frequency,
+        primaryToolsUsed: toolsInput
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+        perceivedAcademicValue: valueRating,
+        perceivedIntegrityRisk: riskRating,
+        comments: pulseComments,
+      });
 
-    setPulseSuccess(true);
-    setPulseComments('');
-    setTimeout(() => setPulseSuccess(false), 2500);
+      setPulseSuccess(true);
+      setPulseComments('');
+      setTimeout(() => setPulseSuccess(false), 2500);
+    } catch (err) {
+      setPulseError(err instanceof Error ? err.message : 'Could not submit the pulse response.');
+    } finally {
+      setPulseSubmitting(false);
+    }
   };
 
-  const handleSubmitShadowReport = (e: React.FormEvent) => {
+  const handleSubmitShadowReport = async (e: React.FormEvent) => {
     e.preventDefault();
+    setReportError('');
+    setReportSuccess(false);
     if (!breakdownDesc.trim()) return;
 
-    onAddShadowReport({
-      tenantId: 'inst-1',
-      reportedByRole: userRole,
-      departmentOrCourse: deptName || 'Academic Course',
-      toolOrUseName: toolName || 'Unsanctioned AI Tool',
-      description: breakdownDesc,
-      perceivedRiskType: riskType,
-    });
+    setReportSubmitting(true);
+    try {
+      await onAddShadowReport({
+        reportedByRole: userRole,
+        departmentOrCourse: deptName || 'Academic Course',
+        toolOrUseName: toolName || 'Unsanctioned AI Tool',
+        description: breakdownDesc,
+        perceivedRiskType: riskType,
+      });
 
-    setReportSuccess(true);
-    setBreakdownDesc('');
-    setToolName('');
-    setTimeout(() => setReportSuccess(false), 2500);
+      setReportSuccess(true);
+      setBreakdownDesc('');
+      setToolName('');
+      setTimeout(() => setReportSuccess(false), 2500);
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : 'Could not submit the shadow AI report.');
+    } finally {
+      setReportSubmitting(false);
+    }
   };
 
   return (
@@ -122,6 +161,12 @@ export const GrassrootsInputView: React.FC<GrassrootsInputViewProps> = ({
               {pulseSuccess && (
                 <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl text-emerald-800 flex items-center gap-2 font-bold">
                   <CheckCircle className="w-4 h-4 text-emerald-600" /> Pulse response submitted to leadership dashboard!
+                </div>
+              )}
+
+              {pulseError && (
+                <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-rose-800 flex items-center gap-2 font-bold">
+                  <AlertTriangle className="w-4 h-4 text-rose-600" /> {pulseError}
                 </div>
               )}
 
@@ -218,9 +263,10 @@ export const GrassrootsInputView: React.FC<GrassrootsInputViewProps> = ({
 
               <button
                 type="submit"
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
+                disabled={pulseSubmitting}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
               >
-                <Send className="w-4 h-4" /> Submit Pulse Survey Response
+                <Send className="w-4 h-4" /> {pulseSubmitting ? 'Submitting…' : 'Submit Pulse Survey Response'}
               </button>
             </form>
           ) : (
@@ -237,6 +283,12 @@ export const GrassrootsInputView: React.FC<GrassrootsInputViewProps> = ({
               {reportSuccess && (
                 <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl text-emerald-800 flex items-center gap-2 font-bold">
                   <CheckCircle className="w-4 h-4 text-emerald-600" /> Shadow AI flag logged for leadership review!
+                </div>
+              )}
+
+              {reportError && (
+                <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-rose-800 flex items-center gap-2 font-bold">
+                  <AlertTriangle className="w-4 h-4 text-rose-600" /> {reportError}
                 </div>
               )}
 
@@ -292,9 +344,10 @@ export const GrassrootsInputView: React.FC<GrassrootsInputViewProps> = ({
 
               <button
                 type="submit"
-                className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
+                disabled={reportSubmitting}
+                className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
               >
-                <AlertTriangle className="w-4 h-4" /> Submit Shadow AI Alert
+                <AlertTriangle className="w-4 h-4" /> {reportSubmitting ? 'Submitting…' : 'Submit Shadow AI Alert'}
               </button>
             </form>
           )}

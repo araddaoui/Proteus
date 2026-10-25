@@ -1,0 +1,33 @@
+import { Router } from 'express';
+import { adminRouter } from './admin.js';
+import { aiRouter } from './ai.js';
+import { compassRouter } from './compass.js';
+import { decisionRouter } from './decisions.js';
+import { demoRouter } from './demo.js';
+import { evidenceRouter } from './evidence.js';
+import { overlayRouter, institutionRouter } from './institutions.js';
+import { inputRouter } from './inputs.js';
+import { inviteRouter } from './invites.js';
+import { meRouter } from './me.js';
+import { metaRouter } from './meta.js';
+import { diagnosticRouter, jobRouter } from './operations.js';
+import { predictionRouter, redFlagRouter } from './predictions.js';
+
+export const apiRouter = Router();
+
+apiRouter.use('/me', meRouter);
+apiRouter.use(metaRouter);
+apiRouter.use('/invites', inviteRouter);
+apiRouter.use('/compass', compassRouter);
+apiRouter.use('/ai', aiRouter);
+apiRouter.use('/institutions', institutionRouter);
+apiRouter.use('/overlay-packs', overlayRouter);
+apiRouter.use('/decisions', decisionRouter);
+apiRouter.use('/evidence', evidenceRouter);
+apiRouter.use('/predictions', predictionRouter);
+apiRouter.use('/red-flags', redFlagRouter);
+apiRouter.use('/inputs', inputRouter);
+apiRouter.use('/diagnostics', diagnosticRouter);
+apiRouter.use('/jobs', jobRouter);
+apiRouter.use('/admin', adminRouter);
+apiRouter.use('/demo', demoRouter);

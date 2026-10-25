@@ -1,18 +1,186 @@
-import { UserRole } from './index.js';
+import type { UserRole } from './index.js';
 
 export type StakeholderRole = 'high_admin' | 'program_director' | 'student' | 'consultant';
 
-export interface AuthenticatedUser {
+export type TenantRole =
+  | 'tenant_admin'
+  | 'academic_leader'
+  | 'faculty'
+  | 'consultant'
+  | 'student'
+  | 'staff';
+
+export const TENANT_ROLES: TenantRole[] = [
+  'tenant_admin',
+  'academic_leader',
+  'faculty',
+  'consultant',
+  'student',
+  'staff',
+];
+
+export type Capability =
+  | 'read_tenant'
+  | 'read_confidential'
+  | 'edit_profile'
+  | 'manage_members'
+  | 'read_decisions'
+  | 'create_decisions'
+  | 'edit_decisions'
+  | 'set_disposition'
+  | 'sign_academic'
+  | 'sign_administrative'
+  | 'transition_implemented'
+  | 'read_evidence'
+  | 'manage_evidence'
+  | 'approve_staging'
+  | 'read_predictions'
+  | 'manage_predictions'
+  | 'submit_input'
+  | 'read_all_inputs'
+  | 'read_diagnostics'
+  | 'edit_diagnostics'
+  | 'run_jobs'
+  | 'read_audit'
+  | 'manage_institution'
+  | 'reset_demo';
+
+export const ROLE_CAPABILITIES: Record<TenantRole, Capability[]> = {
+  tenant_admin: [
+    'read_tenant',
+    'read_confidential',
+    'edit_profile',
+    'manage_members',
+    'read_decisions',
+    'create_decisions',
+    'edit_decisions',
+    'set_disposition',
+    'sign_administrative',
+    'transition_implemented',
+    'read_evidence',
+    'manage_evidence',
+    'approve_staging',
+    'read_predictions',
+    'manage_predictions',
+    'submit_input',
+    'read_all_inputs',
+    'read_diagnostics',
+    'edit_diagnostics',
+    'run_jobs',
+    'read_audit',
+    'manage_institution',
+    'reset_demo',
+  ],
+  academic_leader: [
+    'read_tenant',
+    'read_confidential',
+    'read_decisions',
+    'create_decisions',
+    'edit_decisions',
+    'set_disposition',
+    'sign_academic',
+    'read_evidence',
+    'manage_evidence',
+    'approve_staging',
+    'read_predictions',
+    'manage_predictions',
+    'submit_input',
+    'read_all_inputs',
+    'read_diagnostics',
+    'read_audit',
+  ],
+  faculty: [
+    'read_tenant',
+    'read_confidential',
+    'read_decisions',
+    'read_evidence',
+    'manage_evidence',
+    'approve_staging',
+    'read_predictions',
+    'manage_predictions',
+    'submit_input',
+    'read_all_inputs',
+    'read_diagnostics',
+  ],
+  consultant: [
+    'read_tenant',
+    'read_decisions',
+    'read_evidence',
+    'manage_evidence',
+    'approve_staging',
+    'read_predictions',
+    'read_diagnostics',
+    'submit_input',
+    'read_all_inputs',
+  ],
+  student: ['read_tenant', 'read_decisions', 'submit_input'],
+  staff: [
+    'read_tenant',
+    'read_decisions',
+    'read_evidence',
+    'read_predictions',
+    'submit_input',
+    'read_all_inputs',
+    'read_diagnostics',
+    'run_jobs',
+  ],
+};
+
+export function resolveCapabilities(role: TenantRole, overrides?: string[] | null): Capability[] {
+  const base = ROLE_CAPABILITIES[role] || [];
+  if (!overrides?.length) return [...base];
+  return Array.from(new Set([...base, ...(overrides as Capability[])]));
+}
+
+export function toUiRole(role: TenantRole): UserRole {
+  switch (role) {
+    case 'tenant_admin':
+    case 'staff':
+      return 'leadership';
+    case 'academic_leader':
+    case 'faculty':
+      return 'faculty';
+    case 'consultant':
+      return 'consultant';
+    case 'student':
+      return 'student';
+    default:
+      return 'student';
+  }
+}
+
+export interface AuthUser {
   uid: string;
   email: string;
   displayName: string;
-  role: StakeholderRole;
+  avatarUrl?: string;
+}
+
+export interface MembershipInfo {
+  id: string;
+  tenantId: string;
+  institutionName: string;
+  institutionShortName: string;
+  role: TenantRole;
+  title: string;
+  governingBodyAffiliation: string;
+  capabilities: Capability[];
+}
+
+export interface MeResponse {
+  user: AuthUser;
+  memberships: MembershipInfo[];
+  isPlatformAdmin: boolean;
+}
+
+export interface AuthenticatedUser extends AuthUser {
+  role: UserRole;
   title: string;
   tenantId: string;
   governingBodyAffiliation: string;
-  avatarUrl?: string;
-  isPersona?: boolean;
-  token?: string;
+  capabilities: Capability[];
+  memberships: MembershipInfo[];
+  isPlatformAdmin: boolean;
 }
 
 export interface PersonaProfile {

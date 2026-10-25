@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { JobExecutionStatus, UserRole } from '../types';
+import { useAuth } from '../context/AuthContext';
 import { Play, Activity, Clock, ShieldCheck, CheckCircle2, RefreshCw } from 'lucide-react';
 
 interface JobsAndGovernanceViewProps {
@@ -13,6 +14,8 @@ export const JobsAndGovernanceView: React.FC<JobsAndGovernanceViewProps> = ({
   userRole,
   onRunJob,
 }) => {
+  const { hasCapability } = useAuth();
+  const canRunJobs = hasCapability('run_jobs');
   const [runningJobId, setRunningJobId] = useState<string | null>(null);
 
   const handleTrigger = async (jobId: JobExecutionStatus['jobId']) => {
@@ -75,21 +78,23 @@ export const JobsAndGovernanceView: React.FC<JobsAndGovernanceViewProps> = ({
                 </div>
               </div>
 
-              <button
-                onClick={() => handleTrigger(job.jobId)}
-                disabled={isRunning}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 mt-4"
-              >
-                {isRunning ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Executing Background Task...
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5" /> Execute Job Now
-                  </>
-                )}
-              </button>
+              {canRunJobs && (
+                <button
+                  onClick={() => handleTrigger(job.jobId)}
+                  disabled={isRunning}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 mt-4"
+                >
+                  {isRunning ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Executing Background Task...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-3.5 h-3.5" /> Execute Job Now
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           );
         })}

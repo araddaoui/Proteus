@@ -1,4 +1,4 @@
-export type UserRole = 'high_admin' | 'program_director' | 'student' | 'consultant' | 'leadership' | 'faculty';
+export type UserRole = 'leadership' | 'faculty' | 'student' | 'consultant';
 export * from './auth.js';
 
 export type AcademicGovernanceType = 'faculty_senate' | 'scientific_council' | 'academic_council' | 'none';
@@ -7,6 +7,7 @@ export interface GovernanceSignoff {
   signoffType: 'academic' | 'administrative';
   bodyName: string; // e.g. "University Faculty Senate", "Scientific Council", "Office of the Provost"
   signedBy: string | null;
+  signedByUid?: string | null;
   signedAt: string | null;
   status: 'pending' | 'approved' | 'rejected' | 'conditional';
   resolutionNotes: string;
@@ -116,6 +117,7 @@ export interface DecisionRecord {
   academicSignoff?: GovernanceSignoff;
   administrativeSignoff?: GovernanceSignoff;
   auditDossierGeneratedAt?: string;
+  version?: number;
   createdAt: string;
   updatedAt: string;
 }

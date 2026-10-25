@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Institution, OverlayPack, UserRole } from '../types';
+import { useAuth } from '../context/AuthContext';
 import { Building2, Layers, Globe, Shield, Save, CheckCircle, Lock, Users } from 'lucide-react';
 
 interface InstitutionalProfileViewProps {
@@ -17,10 +18,11 @@ export const InstitutionalProfileView: React.FC<InstitutionalProfileViewProps> =
   userRole,
   onUpdateProfile,
 }) => {
+  const { hasCapability } = useAuth();
   const [formData, setFormData] = useState<Institution>({ ...institution });
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const canEditAll = userRole === 'leadership' || userRole === 'consultant';
+  const canEditAll = hasCapability('manage_institution');
   const isStudent = userRole === 'student';
 
   const handleChange = (field: keyof Institution, value: any) => {

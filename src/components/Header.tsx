@@ -1,5 +1,6 @@
 import React from 'react';
 import { UserRole, Institution, OverlayPack } from '../types';
+import type { Capability } from '../types/auth';
 import { ShieldCheck, Compass, Users, Building2, AlertTriangle, Layers, BookOpen, RotateCcw } from 'lucide-react';
 
 interface HeaderProps {
@@ -17,6 +18,10 @@ interface HeaderProps {
   kernelVersion: string;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  canResetDemo?: boolean;
+  onResetDemo?: () => Promise<void>;
+  canManageMembers?: boolean;
+  capabilities?: Capability[];
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -29,36 +34,49 @@ export const Header: React.FC<HeaderProps> = ({
   kernelVersion,
   activeTab,
   setActiveTab,
+  canResetDemo = false,
+  onResetDemo,
+  canManageMembers = false,
+  capabilities = [],
 }) => {
   const currentInst = institutions.find((i) => i.id === currentTenantId) || institutions[0];
 
   const handleResetSandbox = async () => {
-    if (!window.confirm('Reset the sandbox to the RSU baseline? This overwrites all local changes.')) {
+    if (!onResetDemo) return;
+    if (!window.confirm('Reset the demo tenant to the RSU baseline? This overwrites all demo changes.')) {
       return;
     }
     try {
-      await fetch('/api/sandbox/reset', { method: 'POST' });
+      await onResetDemo();
     } catch {
-      // Offline fallback: still clear local state below.
+      // The workspace surfaces the API error.
     }
-    localStorage.removeItem('proteus_store');
-    window.location.reload();
   };
 
-  const roleNavItems = [
-    { id: 'overview', label: 'Compass Executive Hub', roles: ['leadership', 'faculty', 'student', 'consultant'] },
-    { id: 'compass_master', label: 'Compass Master (30 Sections & Final Test)', roles: ['leadership', 'faculty', 'student', 'consultant'] },
-    { id: 'profile', label: 'Institutional Profile', roles: ['leadership', 'faculty', 'student', 'consultant'] },
-    { id: 'evidence', label: 'Evidence Ledger', roles: ['leadership', 'faculty', 'student', 'consultant'] },
-    { id: 'scenarios', label: 'Scenario Engine & Decisions', roles: ['leadership', 'faculty', 'consultant'] },
-    { id: 'stakeholders', label: 'Stakeholder Ledger', roles: ['leadership', 'faculty', 'student', 'consultant'] },
-    { id: 'predictions', label: 'Prediction Tracker', roles: ['leadership', 'faculty', 'consultant'] },
-    { id: 'redflags', label: 'Red-Flag Library', roles: ['leadership', 'faculty', 'student', 'consultant'] },
-    { id: 'input', label: 'Grassroots Input & Shadow AI', roles: ['leadership', 'faculty', 'student', 'consultant'] },
-    { id: 'jobs', label: 'Governance Jobs & Kernel', roles: ['leadership', 'consultant'] },
+  const roleNavItems: { id: string; label: string; roles: UserRole[]; capability: Capability }[] = [
+    { id: 'overview', label: 'Compass Executive Hub', roles: ['leadership', 'faculty', 'student', 'consultant'], capability: 'read_tenant' },
+    { id: 'compass_master', label: 'Compass Master (30 Sections & Final Test)', roles: ['leadership', 'faculty', 'student', 'consultant'], capability: 'read_diagnostics' },
+    { id: 'profile', label: 'Institutional Profile', roles: ['leadership', 'faculty', 'student', 'consultant'], capability: 'read_tenant' },
+    { id: 'evidence', label: 'Evidence Ledger', roles: ['leadership', 'faculty', 'student', 'consultant'], capability: 'read_evidence' },
+    { id: 'scenarios', label: 'Scenario Engine & Decisions', roles: ['leadership', 'faculty', 'consultant'], capability: 'read_decisions' },
+    { id: 'stakeholders', label: 'Stakeholder Ledger', roles: ['leadership', 'faculty', 'student', 'consultant'], capability: 'read_decisions' },
+    { id: 'predictions', label: 'Prediction Tracker', roles: ['leadership', 'faculty', 'consultant'], capability: 'read_predictions' },
+    { id: 'redflags', label: 'Red-Flag Library', roles: ['leadership', 'faculty', 'student', 'consultant'], capability: 'read_tenant' },
+    { id: 'input', label: 'Grassroots Input & Shadow AI', roles: ['leadership', 'faculty', 'student', 'consultant'], capability: 'submit_input' },
+    { id: 'jobs', label: 'Governance Jobs & Kernel', roles: ['leadership', 'consultant'], capability: 'read_diagnostics' },
+    ...(canManageMembers
+      ? [{
+          id: 'admin',
+          label: 'Administration',
+          roles: ['leadership', 'faculty', 'consultant', 'student'] as UserRole[],
+          capability: 'manage_members' as Capability,
+        }]
+      : []),
   ];
 
-  const availableTabs = roleNavItems.filter((item) => item.roles.includes(currentRole));
+  const availableTabs = roleNavItems.filter(
+    (item) => item.roles.includes(currentRole) && capabilities.includes(item.capability),
+  );
 
   return (
     <header className="bg-slate-900 text-white sticky top-0 z-50 shadow-md">
@@ -131,17 +149,16 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenAuthModal}
             className="text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg transition"
           >
-            Change Identity
+            Account
           </button>
 
-          {/* Local sandbox only. Never rendered in production builds. */}
-          {import.meta.env.DEV && (
+          {canResetDemo && onResetDemo && (
             <button
               onClick={handleResetSandbox}
-              title="Restore the RSU sandbox baseline (local dev only)"
-              className="text-xs font-semibold text-amber-300 hover:text-amber-100 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-800 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5"
+              title="Restore the demo tenant to the RSU baseline"
+              className="flex items-center gap-1.5 rounded-lg border border-amber-800 bg-amber-950/60 px-3 py-1.5 text-xs font-semibold text-amber-300 transition hover:bg-amber-900/60 hover:text-amber-100"
             >
-              <RotateCcw className="w-3.5 h-3.5" /> Reset Sandbox
+              <RotateCcw className="w-3.5 h-3.5" /> Reset Demo
             </button>
           )}
         </div>
