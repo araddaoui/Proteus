@@ -17,19 +17,21 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { getActiveKernel } from '../kernel/kernelModule';
+import { SEED_PERSONAS } from '../types/auth';
 
 interface LandingPageViewProps {
-  // Every entry point on this page opens the identity/persona modal — there
+  // Every entry point on this page opens the identity/persona modal - there
   // is no direct, unauthenticated path into any role. (Note: the modal's
-  // current demo persona-switcher is not production authentication — see
+  // current demo persona-switcher is not production authentication - see
   // the FAQ entry on this page for an honest account of what that means.)
   onOpenAuthModal: () => void;
 }
 
 export const LandingPageView: React.FC<LandingPageViewProps> = ({ onOpenAuthModal }) => {
   const kernel = getActiveKernel();
+  const previewPersonas = SEED_PERSONAS;
 
-  // Pulled live from the real kernel JSON — not hardcoded preview copy that
+  // Pulled live from the real kernel JSON - not hardcoded preview copy that
   // can drift from what Compass Master actually shows. Featuring the four
   // constitutional sections plus one strong operational example.
   const featuredIds = ['II', 'III', 'XIV', 'XV', 'XXVII'];
@@ -466,145 +468,91 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onOpenAuthModa
               Built for Every Seat at the Table
             </h2>
             <p className="text-sm sm:text-base text-slate-400">
-              Proteus adapts what it shows based on role. Preview any of the three demo personas below to see the platform from their seat — this opens the same identity selector as "Select Identity" above.
+              Proteus adapts what it shows based on role. Preview any of the demo personas below to see the platform from their seat — this opens the same identity selector as "Select Identity" above.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6">
-            {/* Persona 1: Provost */}
-            <div className="bg-slate-900 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-6 transition flex flex-col justify-between group">
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-base shadow-lg">
-                    EV
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-white font-serif text-lg">Dr. Evelyn Vance</h3>
-                    <p className="text-xs text-emerald-400 font-semibold">Provost & Executive Vice Chancellor</p>
-                    <span className="text-[10px] uppercase font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded">
-                      High-Level Administration
-                    </span>
-                  </div>
-                </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {previewPersonas.map((persona) => {
+              const initials = persona.name
+                .split(' ')
+                .map((n) => n[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase();
+              const colorMap: Record<string, string> = {
+                'bg-emerald-600': 'emerald',
+                'bg-indigo-600': 'indigo',
+                'bg-amber-600': 'amber',
+                'bg-cyan-700': 'cyan',
+                'bg-fuchsia-700': 'fuchsia',
+                'bg-rose-700': 'rose',
+              };
+              const color = colorMap[persona.avatarColor] || 'indigo';
+              const colorClasses: Record<string, { bg: string; text: string; border: string; button: string }> = {
+                emerald: { bg: 'bg-emerald-600', text: 'text-emerald-400', border: 'border-emerald-800', button: 'bg-emerald-600 hover:bg-emerald-500' },
+                indigo: { bg: 'bg-indigo-600', text: 'text-indigo-400', border: 'border-indigo-800', button: 'bg-indigo-600 hover:bg-indigo-500' },
+                amber: { bg: 'bg-amber-600', text: 'text-amber-400', border: 'border-amber-800', button: 'bg-amber-600 hover:bg-amber-500' },
+                cyan: { bg: 'bg-cyan-700', text: 'text-cyan-400', border: 'border-cyan-800', button: 'bg-cyan-700 hover:bg-cyan-600' },
+                fuchsia: { bg: 'bg-fuchsia-700', text: 'text-fuchsia-400', border: 'border-fuchsia-800', button: 'bg-fuchsia-700 hover:bg-fuchsia-600' },
+                rose: { bg: 'bg-rose-700', text: 'text-rose-400', border: 'border-rose-800', button: 'bg-rose-700 hover:bg-rose-600' },
+              };
+              const c = colorClasses[color];
 
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Oversees institutional strategy and issues the administrative half of the dual sign-off. Can view campus-wide decisions, evidence, and predictions.
-                </p>
-
-                <div className="space-y-1.5 text-xs text-slate-400 pt-2 border-t border-slate-800">
-                  <div className="text-slate-300 font-medium">Can:</div>
-                  <div className="flex items-center gap-1.5 text-emerald-400 text-[11px]">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Record administrative sign-off
-                  </div>
-                  <div className="flex items-center gap-1.5 text-emerald-400 text-[11px]">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Configure overlay pack & accreditors
-                  </div>
-                  <div className="flex items-center gap-1.5 text-rose-400 text-[11px]">
-                    <Lock className="w-3.5 h-3.5" /> Still needs Faculty Senate concurrence to implement
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-6 mt-6 border-t border-slate-800">
-                <button
-                  onClick={onOpenAuthModal}
-                  className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow transition flex items-center justify-center gap-1.5"
+              return (
+                <div
+                  key={persona.id}
+                  className={`bg-slate-900 border border-slate-800 hover:border-${color}-500/50 rounded-2xl p-6 transition flex flex-col justify-between group`}
                 >
-                  <span>Preview as Provost</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-12 h-12 rounded-full ${c.bg} text-white font-bold flex items-center justify-center text-base shadow-lg`}
+                      >
+                        {initials}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-white font-serif text-lg">{persona.name}</h3>
+                        <p className={`text-xs ${c.text} font-semibold`}>{persona.title}</p>
+                        <span
+                          className={`text-[10px] uppercase font-bold bg-${color}-950/80 ${c.text} border ${c.border} px-1.5 py-0.5 rounded`}
+                        >
+                          {persona.governingBodyAffiliation}
+                        </span>
+                      </div>
+                    </div>
 
-            {/* Persona 2: Faculty Senate Chair */}
-            <div className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-6 transition flex flex-col justify-between group">
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-base shadow-lg">
-                    MT
+                    <p className="text-xs text-slate-300 leading-relaxed">{persona.description}</p>
+
+                    <div className="space-y-1.5 text-xs text-slate-400 pt-2 border-t border-slate-800">
+                      <div className="text-slate-300 font-medium">Can:</div>
+                      {persona.allowedPrivileges.slice(0, 3).map((priv, i) => (
+                        <div key={i} className={`flex items-start gap-1.5 ${c.text} text-[11px]`}>
+                          <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                          <span>{priv}</span>
+                        </div>
+                      ))}
+                      {persona.restrictedPrivileges.slice(0, 1).map((priv, i) => (
+                        <div key={`r-${i}`} className="flex items-start gap-1.5 text-rose-400 text-[11px]">
+                          <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                          <span>{priv}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-bold text-white font-serif text-lg">Prof. Marcus Thorne</h3>
-                    <p className="text-xs text-indigo-400 font-semibold">Faculty Senate Chair</p>
-                    <span className="text-[10px] uppercase font-bold bg-indigo-950/80 text-indigo-300 border border-indigo-800 px-1.5 py-0.5 rounded">
-                      Academic Governance & Faculty
-                    </span>
+
+                  <div className="pt-6 mt-6 border-t border-slate-800">
+                    <button
+                      onClick={onOpenAuthModal}
+                      className={`w-full py-2.5 px-4 ${c.button} text-white text-xs font-bold rounded-xl shadow transition flex items-center justify-center gap-1.5`}
+                    >
+                      <span>Preview as {persona.name.split(' ').pop()}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
-
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Represents academic governance and issues the academic half of the dual sign-off. Reviews evidence staged for the ledger.
-                </p>
-
-                <div className="space-y-1.5 text-xs text-slate-400 pt-2 border-t border-slate-800">
-                  <div className="text-slate-300 font-medium">Can:</div>
-                  <div className="flex items-center gap-1.5 text-indigo-400 text-[11px]">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Record academic sign-off
-                  </div>
-                  <div className="flex items-center gap-1.5 text-indigo-400 text-[11px]">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Approve or reject staged evidence claims
-                  </div>
-                  <div className="flex items-center gap-1.5 text-rose-400 text-[11px]">
-                    <Lock className="w-3.5 h-3.5" /> Cannot set administrative sign-off
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-6 mt-6 border-t border-slate-800">
-                <button
-                  onClick={onOpenAuthModal}
-                  className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow transition flex items-center justify-center gap-1.5"
-                >
-                  <span>Preview as Senate Chair</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Persona 3: Student Body President */}
-            <div className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl p-6 transition flex flex-col justify-between group">
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-amber-600 text-white font-bold flex items-center justify-center text-base shadow-lg">
-                    ML
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-white font-serif text-lg">Maya Lin</h3>
-                    <p className="text-xs text-amber-400 font-semibold">Student Body President</p>
-                    <span className="text-[10px] uppercase font-bold bg-amber-950/80 text-amber-300 border border-amber-800 px-1.5 py-0.5 rounded">
-                      Student Representative
-                    </span>
-                  </div>
-                </div>
-
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Sees a scoped, student-relevant view: submits pulse surveys and reports shadow AI tools she encounters in courses.
-                </p>
-
-                <div className="space-y-1.5 text-xs text-slate-400 pt-2 border-t border-slate-800">
-                  <div className="text-slate-300 font-medium">Can:</div>
-                  <div className="flex items-center gap-1.5 text-amber-400 text-[11px]">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Submit pulse survey responses
-                  </div>
-                  <div className="flex items-center gap-1.5 text-amber-400 text-[11px]">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Report shadow AI use she's seen in courses
-                  </div>
-                  <div className="flex items-center gap-1.5 text-rose-400 text-[11px]">
-                    <Lock className="w-3.5 h-3.5" /> Cannot set sign-offs or change decision status
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-6 mt-6 border-t border-slate-800">
-                <button
-                  onClick={onOpenAuthModal}
-                  className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl shadow transition flex items-center justify-center gap-1.5"
-                >
-                  <span>Preview as Student President</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -658,7 +606,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onOpenAuthModa
                 Is Proteus production-ready, and how does sign-in actually work today?
               </h3>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                Proteus is in active development. Today, "Select Identity" lets you preview the platform through one of three demo personas, or enter a custom name/role — this is meant to demonstrate the role-based views, not to serve as secured production sign-in. Institutional single sign-on and verified identity are on the roadmap; until that lands, treat any decision made in a demo session as a rehearsal, not a real institutional record.
+                Proteus is in active development. Today, "Select Identity" lets you preview the platform through demo personas, or enter a custom name/role — this is meant to demonstrate the role-based views, not to serve as secured production sign-in. Institutional single sign-on and verified identity are on the roadmap; until that lands, treat any decision made in a demo session as a rehearsal, not a real institutional record.
               </p>
             </div>
           </div>
