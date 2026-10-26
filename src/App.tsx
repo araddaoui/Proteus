@@ -34,6 +34,10 @@ import { AdminManagementView } from './components/AdminManagementView';
 import { LegalPage } from './components/LegalPage';
 import { getLegalDocForPath } from './legal/legalDocs';
 import { ApiError } from './services/api';
+import { RSU_INSTITUTION, RSU_OVERLAY_PACK } from './sandbox/rsuSeed';
+
+const FALLBACK_INSTITUTION: Institution = RSU_INSTITUTION;
+const FALLBACK_INSTITUTIONS: Institution[] = [FALLBACK_INSTITUTION];
 
 export default function App() {
   return (
@@ -139,10 +143,10 @@ function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
   const currentRole: UserRole = user!.role;
 
   const [activeTab, setActiveTab] = useState<string>('overview');
-  const [profile, setProfile] = useState<Institution | null>(null);
-  const [activeOverlayPack, setActiveOverlayPack] = useState<OverlayPack | null>(null);
-  const [allInstitutions, setAllInstitutions] = useState<Institution[]>([]);
-  const [allOverlayPacks, setAllOverlayPacks] = useState<OverlayPack[]>([]);
+  const [profile, setProfile] = useState<Institution>(FALLBACK_INSTITUTION);
+  const [activeOverlayPack, setActiveOverlayPack] = useState<OverlayPack>(RSU_OVERLAY_PACK);
+  const [allInstitutions, setAllInstitutions] = useState<Institution[]>(FALLBACK_INSTITUTIONS);
+  const [allOverlayPacks, setAllOverlayPacks] = useState<OverlayPack[]>([RSU_OVERLAY_PACK]);
 
   const [claims, setClaims] = useState<EvidenceClaim[]>([]);
   const [staging, setStaging] = useState<EvidenceStagingItem[]>([]);
@@ -166,24 +170,55 @@ function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
     setIsLoading(true);
     setError(null);
     try {
-      const [institutions, packs, kernel, appConfig] = await Promise.all([
-        apiFetch<Institution[]>('/institutions'),
-        apiFetch<OverlayPack[]>('/overlay-packs'),
-        apiFetch<{ kernel: { version: string } }>('/kernel'),
-        apiFetch<{ aiEnabled: boolean }>('/config'),
+      const [institutionResponse, packResponse, kernel, appConfig] = await Promise.all([
+        optional(
+          apiFetch<Institution[] | { data?: Institution[]; items?: Institution[] }>('/institutions'),
+          [RSU_INSTITUTION],
+        ),
+        optional(
+          apiFetch<OverlayPack[] | { data?: OverlayPack[]; items?: OverlayPack[] }>('/overlay-packs'),
+          [RSU_OVERLAY_PACK],
+        ),
+        optional(apiFetch<{ kernel: { version: string } }>('/kernel'), { kernel: { version: '1.0' } }),
+        optional(apiFetch<{ aiEnabled: boolean }>('/config'), { aiEnabled: false }),
       ]);
       if (requestId !== loadRequestId.current) return;
-      setAllInstitutions(institutions);
+      const fetchedInstitutions = Array.isArray(institutionResponse)
+        ? institutionResponse
+        : institutionResponse.data || institutionResponse.items || [];
+      const fetchedPacks = Array.isArray(packResponse)
+        ? packResponse
+        : packResponse.data || packResponse.items || [];
+      const institutions = fetchedInstitutions.length > 0
+        ? fetchedInstitutions
+        : FALLBACK_INSTITUTIONS;
+      const packs = fetchedPacks.length > 0 ? fetchedPacks : [RSU_OVERLAY_PACK];
+      const availableInstitutions = institutions.some(
+        (institution) => institution.id === currentTenantId,
+      )
+        ? institutions
+        : currentTenantId === FALLBACK_INSTITUTION.id
+          ? [FALLBACK_INSTITUTION, ...institutions]
+          : institutions;
+      setAllInstitutions(availableInstitutions);
       setAllOverlayPacks(packs);
       setKernelVersion(kernel.kernel.version);
       setAiEnabled(appConfig.aiEnabled);
 
       const tenantInstitution =
-        institutions.find((institution) => institution.id === currentTenantId) || null;
+        availableInstitutions.find((institution) => institution.id === currentTenantId) ||
+        FALLBACK_INSTITUTION;
+      const availablePacks = packs.some(
+        (pack) => pack.id === tenantInstitution.activeOverlayPackId,
+      )
+        ? packs
+        : [RSU_OVERLAY_PACK, ...packs];
       setProfile(tenantInstitution);
       setActiveOverlayPack(
-        packs.find((pack) => pack.id === tenantInstitution?.activeOverlayPackId) || packs[0] || null,
+        availablePacks.find((pack) => pack.id === tenantInstitution.activeOverlayPackId) ||
+          RSU_OVERLAY_PACK,
       );
+      setAllOverlayPacks(availablePacks);
 
       const [
         claimsData,
@@ -234,6 +269,10 @@ function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
       setJobs(jobsData);
     } catch (err) {
       if (requestId !== loadRequestId.current) return;
+      setProfile(FALLBACK_INSTITUTION);
+      setActiveOverlayPack(RSU_OVERLAY_PACK);
+      setAllInstitutions(FALLBACK_INSTITUTIONS);
+      setAllOverlayPacks([RSU_OVERLAY_PACK]);
       setError(err instanceof Error ? err.message : 'Could not load institutional data.');
     } finally {
       if (requestId === loadRequestId.current) setIsLoading(false);
@@ -561,23 +600,6 @@ function Workspace({ onOpenAuthModal }: { onOpenAuthModal: () => void }) {
           </div>
           <h2 className="font-serif text-lg font-bold text-white">Loading Proteus Compass OS…</h2>
           <p className="text-xs text-slate-400">Loading institutional data, kernel rules, and overlay packs.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!profile || !activeOverlayPack) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-900 p-6 text-slate-100">
-        <div className="max-w-lg rounded-xl border border-rose-800 bg-rose-950/40 p-6 text-center">
-          <h2 className="font-bold text-rose-200">Institutional data unavailable</h2>
-          <p className="mt-2 text-sm text-rose-300">{error || 'The active institution could not be loaded.'}</p>
-          <button
-            onClick={() => void loadData()}
-            className="mt-4 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500"
-          >
-            Retry
-          </button>
         </div>
       </div>
     );

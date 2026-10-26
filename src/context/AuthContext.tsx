@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import type { AuthenticatedUser, Capability, MembershipInfo, TenantRole } from '../types/auth';
 import { resolveCapabilities, toUiRole } from '../types/auth';
+import { RSU_INSTITUTION, RSU_OVERLAY_PACK } from '../sandbox/rsuSeed';
 
 interface AuthContextType {
   user: AuthenticatedUser | null;
@@ -142,10 +143,12 @@ function localFallback(path: string, method: string): unknown {
   if (method === 'GET') {
     if (pathname === '/kernel') return { kernel: { version: '1.0' } };
     if (pathname === '/config') return { aiEnabled: false };
+    if (pathname === '/institutions') return [RSU_INSTITUTION];
+    if (pathname === `/institutions/${RSU_INSTITUTION.id}`) return RSU_INSTITUTION;
+    if (pathname === '/overlay-packs') return [RSU_OVERLAY_PACK];
+    if (pathname === `/overlay-packs/${RSU_OVERLAY_PACK.id}`) return RSU_OVERLAY_PACK;
 
     const collectionRoutes = new Set([
-      '/institutions',
-      '/overlay-packs',
       '/evidence',
       '/evidence/staging',
       '/decisions',
