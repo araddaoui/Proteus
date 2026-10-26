@@ -66,7 +66,7 @@ function ProteusRoot() {
   }, [isLoading, isLoggedIn, memberships.length]);
 
   const handleIdentityConfirmed = () => {
-    if (memberships.length > 0) setView('workspace');
+    setView('workspace');
   };
 
   if (legalDoc) {

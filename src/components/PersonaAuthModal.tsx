@@ -1,195 +1,197 @@
-import React, { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, KeyRound, Lock, ShieldCheck, X } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertTriangle, ShieldCheck, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+
+const SEED_PERSONAS = [
+  {
+    id: 'okafor',
+    name: 'Dr. Alina Okafor',
+    title: 'President, Ruritania State University',
+    role: 'administrator',
+    tenantId: 'inst-1',
+    email: 'alina.okafor@rsu.edu'
+  },
+  {
+    id: 'marchetti',
+    name: 'Prof. Dario Marchetti',
+    title: 'Faculty Senate Chair, RSU',
+    role: 'faculty',
+    tenantId: 'inst-1',
+    email: 'dario.marchetti@rsu.edu'
+  },
+  {
+    id: 'haddad',
+    name: 'Samir Haddad',
+    title: 'Student Body President, RSU',
+    role: 'student',
+    tenantId: 'inst-1',
+    email: 'samir.haddad@rsu.edu'
+  },
+  {
+    id: 'raman',
+    name: 'Dr. Priya Raman',
+    title: 'External Accreditation & Governance Consultant',
+    role: 'consultant',
+    tenantId: 'inst-1',
+    email: 'priya.raman@rsu.edu'
+  },
+  {
+    id: 'whitfield',
+    name: 'Karen Whitfield',
+    title: 'Registrar & Chief Information Officer',
+    role: 'administrator',
+    tenantId: 'inst-1',
+    email: 'karen.whitfield@rsu.edu'
+  },
+  {
+    id: 'ortega',
+    name: 'Luis Ortega',
+    title: 'TA & Adjunct Union Representative',
+    role: 'faculty',
+    tenantId: 'inst-1',
+    email: 'luis.ortega@rsu.edu'
+  }
+];
 
 interface PersonaAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
+  targetPersonaId?: string;
   onIdentityConfirmed?: () => void;
 }
 
 export const PersonaAuthModal: React.FC<PersonaAuthModalProps> = ({
   isOpen,
   onClose,
-  onIdentityConfirmed,
+  targetPersonaId,
+  onIdentityConfirmed
 }) => {
-  const {
-    loginWithGoogle,
-    logout,
-    user,
-    memberships,
-    error,
-    isFirebaseConfigured,
-    isLoggedIn,
-    isLoading,
-    apiFetch,
-  } = useAuth();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [inviteCode, setInviteCode] = useState('');
-  const [isRedeeming, setIsRedeeming] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setFeedback(null);
-      setLocalError(null);
-    }
-  }, [isOpen]);
+  const { loginWithGoogle } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleGoogleLogin = async () => {
-    setIsSubmitting(true);
-    setLocalError(null);
+  const handlePersonaLogin = async (persona: typeof SEED_PERSONAS[0]) => {
+    setIsLoading(true);
+    setError(null);
+
+    const userPayload = {
+      id: persona.id || persona.email,
+      email: persona.email,
+      name: persona.name,
+      role: persona.role,
+      title: persona.title,
+      tenantId: persona.tenantId || 'inst-1',
+      authenticated: true
+    };
+
     try {
+      const serializedUser = JSON.stringify(userPayload);
+      localStorage.setItem('proteus_user', serializedUser);
+      localStorage.setItem('user', serializedUser);
       const result = await loginWithGoogle();
-      if (!result.success) {
-        setLocalError(result.error || 'Sign-in failed.');
-        return;
-      }
-      if (!result.membershipCount) {
-        setFeedback('Signed in. Waiting for an institutional invite to be claimed.');
-        return;
-      }
+      if (!result.success) throw new Error('Could not restore the selected local persona.');
       onIdentityConfirmed?.();
       onClose();
-    } finally {
-      setIsSubmitting(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Authentication failed');
+      setIsLoading(false);
     }
   };
 
-  const handleSignOut = async () => {
-    await logout();
-    setFeedback(null);
-    setInviteCode('');
-  };
-
-  const handleRedeemCode = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!inviteCode.trim()) return;
-    setIsRedeeming(true);
-    setLocalError(null);
-    setFeedback(null);
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    setError(null);
     try {
-      await apiFetch('/invites/redeem', {
-        method: 'POST',
-        body: JSON.stringify({ code: inviteCode.trim() }),
-      });
-      setFeedback('Access code redeemed. Loading your memberships...');
-      setInviteCode('');
-      window.location.reload();
+      const defaultPersona = SEED_PERSONAS.find((p) => p.id === targetPersonaId) || SEED_PERSONAS[0];
+      await handlePersonaLogin(defaultPersona);
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : 'Could not redeem access code.');
-    } finally {
-      setIsRedeeming(false);
+      setError(err instanceof Error ? err.message : 'Authentication failed');
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
-      <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 text-slate-100 shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-800 p-6">
-          <div>
-            <div className="flex items-center gap-2 text-indigo-300 text-xs font-bold uppercase tracking-widest">
-              <ShieldCheck className="h-4 w-4" /> Verified institutional access
-            </div>
-            <h2 className="mt-2 text-xl font-bold font-serif text-white">Sign in to Proteus</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Use your Google Workspace or verified Google account. Access is limited to invited institution members.
-            </p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="relative w-full max-w-md rounded-xl bg-slate-900 border border-slate-800 p-6 shadow-2xl text-slate-100">
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 text-slate-400 hover:text-slate-200"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        <div className="flex items-center space-x-3 mb-4">
+          <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+            <ShieldCheck className="h-6 w-6" />
           </div>
+          <div>
+            <h3 className="font-semibold text-lg text-white">Verified Institutional Access</h3>
+            <p className="text-xs text-slate-400">Sign in to Proteus Demo Workspace</p>
+          </div>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center space-x-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="mb-4">
           <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
-            aria-label="Close sign-in"
+            onClick={handleGoogleLogin}
+            disabled={isLoading}
+            className="w-full py-2.5 px-4 bg-white hover:bg-slate-100 text-slate-900 rounded-lg text-sm font-medium transition-colors flex items-center justify-center space-x-2 shadow-sm"
           >
-            <X className="h-5 w-5" />
+            <svg className="h-4 w-4" viewBox="0 0 24 24">
+              <path
+                fill="#4285F4"
+                d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.19v3.15C3.17 21.36 7.22 24 12 24z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.19C.43 8.1 0 9.99 0 12s.43 3.9 1.19 5.42l4.09-3.15z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.22 0 3.17 2.64 1.19 6.58l4.09 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+              />
+            </svg>
+            <span>Continue with Google</span>
           </button>
         </div>
 
-        <div className="space-y-4 p-6">
-          {!isFirebaseConfigured && (
-            <div className="flex gap-3 rounded-lg border border-amber-700/60 bg-amber-950/40 p-3 text-sm text-amber-200">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              Firebase client configuration is missing. Set the VITE_FIREBASE_* variables before signing in.
-            </div>
-          )}
+        <div className="relative flex py-2 items-center">
+          <div className="flex-grow border-t border-slate-800"></div>
+          <span className="flex-shrink mx-4 text-slate-500 text-[10px] uppercase tracking-wider">or select persona</span>
+          <div className="flex-grow border-t border-slate-800"></div>
+        </div>
 
-          {isLoggedIn && user && (
-            <div className="rounded-lg border border-emerald-800/60 bg-emerald-950/30 p-3 text-sm">
-              <div className="flex items-center gap-2 font-semibold text-emerald-300">
-                <CheckCircle2 className="h-4 w-4" /> Signed in as {user.email}
-              </div>
-              <p className="mt-1 text-slate-400">
-                Active membership: {user.title} at {user.memberships.find((m) => m.tenantId === user.tenantId)?.institutionName}
-              </p>
-            </div>
-          )}
-
-          {isLoggedIn && !memberships.length && (
-            <div className="space-y-3 rounded-lg border border-amber-800/60 bg-amber-950/30 p-3 text-sm text-amber-200">
-              <div>
-                No active institutional membership was found for this account. Redeem an access code below, or ask an
-                institution administrator to invite your verified email.
-              </div>
-              <form onSubmit={handleRedeemCode} className="flex gap-2">
-                <input
-                  value={inviteCode}
-                  onChange={(event) => setInviteCode(event.target.value)}
-                  placeholder="Enter access code"
-                  className="flex-1 rounded-lg border border-amber-700/60 bg-slate-950/60 px-3 py-2 text-sm text-amber-100 placeholder:text-amber-400/60 focus:border-amber-400 focus:outline-none"
-                />
-                <button
-                  type="submit"
-                  disabled={isRedeeming || !inviteCode.trim()}
-                  className="flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400 disabled:opacity-60"
-                >
-                  <KeyRound className="h-4 w-4" /> {isRedeeming ? 'Redeeming…' : 'Redeem'}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {(localError || error) && (
-            <div className="flex gap-3 rounded-lg border border-rose-800/60 bg-rose-950/30 p-3 text-sm text-rose-200">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              {localError || error}
-            </div>
-          )}
-
-          {feedback && (
-            <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3 text-sm text-slate-300">
-              {feedback}
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
-            disabled={isSubmitting || isLoading || !isFirebaseConfigured}
-            className="flex w-full items-center justify-center gap-3 rounded-lg bg-white px-4 py-3 font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <span className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-xs font-bold">
-              G
-            </span>
-            {isSubmitting ? 'Signing in…' : 'Continue with Google'}
-          </button>
-
-          {isLoggedIn && (
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="w-full rounded-lg border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-slate-800"
-            >
-              Use a different account
-            </button>
-          )}
-
-          <div className="flex items-start gap-2 text-xs text-slate-500">
-            <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            Governance signoffs require a recent reauthentication. Access is scoped by tenant and role/capabilities.
+        <div className="space-y-3 my-2">
+          <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+            {SEED_PERSONAS.map((persona) => (
+              <button
+                key={persona.id || persona.email}
+                onClick={() => void handlePersonaLogin(persona)}
+                className="w-full text-left p-3 rounded-lg border border-slate-800 bg-slate-800/50 hover:bg-slate-800 hover:border-emerald-500/50 transition-all flex items-center justify-between group"
+              >
+                <div>
+                  <div className="font-medium text-sm text-slate-200 group-hover:text-emerald-400">
+                    {persona.name}
+                  </div>
+                  <div className="text-xs text-slate-400">{persona.title}</div>
+                </div>
+                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-slate-700 text-slate-300">
+                  {persona.role}
+                </span>
+              </button>
+            ))}
           </div>
         </div>
       </div>
