@@ -1,57 +1,7 @@
 import React, { useState } from 'react';
 import { AlertTriangle, ShieldCheck, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-
-const SEED_PERSONAS = [
-  {
-    id: 'okafor',
-    name: 'Dr. Alina Okafor',
-    title: 'President, Ruritania State University',
-    role: 'administrator',
-    tenantId: 'inst-1',
-    email: 'alina.okafor@rsu.edu'
-  },
-  {
-    id: 'marchetti',
-    name: 'Prof. Dario Marchetti',
-    title: 'Faculty Senate Chair, RSU',
-    role: 'faculty',
-    tenantId: 'inst-1',
-    email: 'dario.marchetti@rsu.edu'
-  },
-  {
-    id: 'haddad',
-    name: 'Samir Haddad',
-    title: 'Student Body President, RSU',
-    role: 'student',
-    tenantId: 'inst-1',
-    email: 'samir.haddad@rsu.edu'
-  },
-  {
-    id: 'raman',
-    name: 'Dr. Priya Raman',
-    title: 'External Accreditation & Governance Consultant',
-    role: 'consultant',
-    tenantId: 'inst-1',
-    email: 'priya.raman@rsu.edu'
-  },
-  {
-    id: 'whitfield',
-    name: 'Karen Whitfield',
-    title: 'Registrar & Chief Information Officer',
-    role: 'administrator',
-    tenantId: 'inst-1',
-    email: 'karen.whitfield@rsu.edu'
-  },
-  {
-    id: 'ortega',
-    name: 'Luis Ortega',
-    title: 'TA & Adjunct Union Representative',
-    role: 'faculty',
-    tenantId: 'inst-1',
-    email: 'luis.ortega@rsu.edu'
-  }
-];
+import { SEED_PERSONAS } from '../types/auth';
 
 interface PersonaAuthModalProps {
   isOpen: boolean;
@@ -66,7 +16,7 @@ export const PersonaAuthModal: React.FC<PersonaAuthModalProps> = ({
   targetPersonaId,
   onIdentityConfirmed
 }) => {
-  const { loginWithGoogle } = useAuth();
+  const { loginWithGoogle, logout, isLoggedIn } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -194,6 +144,20 @@ export const PersonaAuthModal: React.FC<PersonaAuthModalProps> = ({
             ))}
           </div>
         </div>
+
+        {isLoggedIn && (
+          <div className="mt-4 pt-4 border-t border-slate-800">
+            <button
+              onClick={() => {
+                logout();
+                onClose();
+              }}
+              className="w-full py-2 px-4 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-sm font-medium transition-colors border border-rose-500/20"
+            >
+              Sign Out
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -11,6 +11,7 @@ interface HeaderProps {
   // landing page's identity selector would undermine the "one way in"
   // design — two controls that can disagree about who you are.
   onOpenAuthModal: () => void;
+  onReturnToLanding?: () => void;
   currentTenantId: string;
   setCurrentTenantId: (id: string) => void;
   institutions: Institution[];
@@ -27,6 +28,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   currentRole,
   onOpenAuthModal,
+  onReturnToLanding,
   currentTenantId,
   setCurrentTenantId,
   institutions,
@@ -104,7 +106,11 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Main Header Container */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 border-b border-slate-800">
         {/* Logo and Brand */}
-        <div className="flex items-center gap-3">
+        <button 
+          type="button"
+          onClick={onReturnToLanding}
+          className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
+        >
           <div className="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-indigo-600/30">
             P
           </div>
@@ -117,7 +123,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <p className="text-xs text-slate-400">Higher Education Strategic Intelligence & Governance OS</p>
           </div>
-        </div>
+        </button>
 
         {/* Multi-Tenant & Role Controls */}
         <div className="flex flex-wrap items-center gap-3 text-xs">

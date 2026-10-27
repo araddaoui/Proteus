@@ -513,6 +513,49 @@ export class RelationalDatabase {
     return dec;
   }
 
+  updateDecisionRecommendedAction(id: string, recommendedAction: DecisionRecord['recommendedAction'], notes: string, setBy: string): DecisionRecord {
+    const dec = this.decisions.find(d => d.id === id);
+    if (!dec) throw new Error('Decision not found');
+    dec.recommendedAction = recommendedAction;
+    dec.updatedAt = new Date().toISOString();
+    this.persist();
+    return dec;
+  }
+
+  addGovernanceSignoff(decisionId: string, signoffType: 'academic' | 'administrative', status: 'approved' | 'rejected' | 'pending' | 'conditional', notes: string, signedBy: string): DecisionRecord {
+    const dec = this.decisions.find(d => d.id === decisionId);
+    if (!dec) throw new Error('Decision not found');
+
+    const signoff = {
+      signoffType,
+      bodyName: signoffType === 'academic' ? 'Faculty Senate' : 'Office of the Provost',
+      status,
+      resolutionNotes: notes,
+      signedBy,
+      signedAt: new Date().toISOString()
+    };
+
+    if (signoffType === 'academic') {
+      dec.academicSignoff = signoff;
+    } else {
+      dec.administrativeSignoff = signoff;
+    }
+    
+    // Evaluate gate
+    if (dec.academicSignoff?.status === 'approved' && dec.administrativeSignoff?.status === 'approved') {
+      dec.humanApprovalGatePassed = true;
+    } else {
+      dec.humanApprovalGatePassed = false;
+      if (dec.implementationStatus === 'implemented') {
+        dec.implementationStatus = 'approved_pending';
+      }
+    }
+    
+    dec.updatedAt = new Date().toISOString();
+    this.persist();
+    return dec;
+  }
+
   updateDecisionStatus(id: string, newStatus: DecisionRecord['implementationStatus']): DecisionRecord {
     const dec = this.decisions.find(d => d.id === id);
     if (!dec) throw new Error('Decision not found');

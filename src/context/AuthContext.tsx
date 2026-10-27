@@ -69,6 +69,8 @@ function normalizeTenantRole(role: unknown, fallback: TenantRole): TenantRole {
     case 'administrator':
     case 'high_admin':
       return 'tenant_admin';
+    case 'program_director':
+      return 'academic_leader';
     default:
       return fallback;
   }
@@ -117,7 +119,7 @@ function normalizeUser(stored: StoredUser): AuthenticatedUser {
     : [];
   const memberships = savedMemberships.length > 0
     ? savedMemberships.map((membership) => normalizeMembership(membership, defaultRole, tenantId))
-    : [normalizeMembership(stored, defaultRole, tenantId)];
+    : ['inst-1', 'inst-2', 'inst-3'].map((id) => normalizeMembership(stored, defaultRole, id));
   const membership = memberships.find((item) => item.tenantId === tenantId) || memberships[0];
 
   return {
@@ -138,32 +140,114 @@ function normalizeUser(stored: StoredUser): AuthenticatedUser {
   };
 }
 
-function localFallback(path: string, method: string): unknown {
+import { db } from '../services/db';
+
+function localFallback(path: string, method: string, init?: RequestInit): unknown {
   const pathname = path.split('?')[0].replace(/\/+$/, '') || '/';
+  
   if (method === 'GET') {
     if (pathname === '/kernel') return { kernel: { version: '1.0' } };
     if (pathname === '/config') return { aiEnabled: false };
-    if (pathname === '/institutions') return [RSU_INSTITUTION];
-    if (pathname === `/institutions/${RSU_INSTITUTION.id}`) return RSU_INSTITUTION;
-    if (pathname === '/overlay-packs') return [RSU_OVERLAY_PACK];
-    if (pathname === `/overlay-packs/${RSU_OVERLAY_PACK.id}`) return RSU_OVERLAY_PACK;
+    if (pathname === '/institutions') return db.institutions;
+    if (pathname.startsWith('/institutions/')) return db.institutions.find(i => i.id === pathname.split('/')[2]);
+    if (pathname === '/overlay-packs') return db.overlayPacks;
+    if (pathname.startsWith('/overlay-packs/')) return db.overlayPacks.find(p => p.id === pathname.split('/')[2]);
 
-    const collectionRoutes = new Set([
-      '/evidence',
-      '/evidence/staging',
-      '/decisions',
-      '/decisions/scenarios',
-      '/decisions/stakeholders',
-      '/predictions',
-      '/red-flags',
-      '/inputs/pulse',
-      '/inputs/shadow-ai',
-      '/jobs',
-      '/admin/invites',
-      '/admin/memberships',
-      '/admin/audit',
-    ]);
-    if (collectionRoutes.has(pathname)) return [];
+    if (pathname === '/evidence') return db.evidenceClaims;
+    if (pathname === '/evidence/staging') return db.evidenceStaging;
+    if (pathname === '/decisions') return db.decisions;
+    if (pathname === '/decisions/scenarios') return db.scenarios;
+    if (pathname === '/decisions/stakeholders') return db.stakeholderImpacts;
+    if (pathname === '/predictions') return db.predictions;
+    if (pathname === '/red-flags') return db.redFlags;
+    if (pathname === '/inputs/pulse') return db.pulseSurveys;
+    if (pathname === '/inputs/shadow-ai') return db.shadowAiReports;
+    if (pathname === '/jobs') return db.jobStatuses;
+    if (pathname === '/admin/invites') return [];
+    if (pathname === '/admin/memberships') return [];
+    if (pathname === '/admin/audit') return [];
+  }
+  
+  if (method === 'POST') {
+    if (pathname === '/demo/reset') {
+      db.resetToBaseline();
+      return { success: true };
+    }
+    if (pathname === '/decisions') {
+      return db.addDecision(JSON.parse(init?.body as string));
+    }
+    if (pathname.startsWith('/decisions/') && pathname.endsWith('/signoff')) {
+      const id = pathname.split('/')[2];
+      const body = JSON.parse(init?.body as string);
+      return db.addGovernanceSignoff(id, body.role, body.status || 'approved', body.notes || 'signed', body.signerName);
+    }
+    if (pathname.startsWith('/decisions/') && pathname.endsWith('/scenarios')) {
+      const body = JSON.parse(init?.body as string);
+      return db.addScenarios(body.scenarios);
+    }
+    if (pathname === '/ai/draft-scenarios') {
+      return { scenarios: [] };
+    }
+    if (pathname === '/predictions') {
+      return db.addPrediction(JSON.parse(init?.body as string));
+    }
+    if (pathname === '/inputs/pulse') {
+      return db.addPulseSurvey(JSON.parse(init?.body as string));
+    }
+    if (pathname === '/inputs/shadow-ai') {
+      return db.addShadowAiReport(JSON.parse(init?.body as string));
+    }
+    if (pathname === '/jobs/run') {
+      const body = JSON.parse(init?.body as string);
+      return db.runJob(body.jobId);
+    }
+    if (pathname === '/evidence') {
+      const claim = JSON.parse(init?.body as string);
+      return db.addClaim(claim);
+    }
+    if (pathname.startsWith('/evidence/staging/') && pathname.endsWith('/approve')) {
+      const parts = pathname.split('/');
+      return db.approveStagingEvidence(parts[3], 'AdminUser');
+    }
+    if (pathname.startsWith('/evidence/staging/') && pathname.endsWith('/reject')) {
+      const parts = pathname.split('/');
+      const body = JSON.parse(init?.body as string);
+      db.rejectStagingEvidence(parts[3], body.reason || 'Rejected', 'AdminUser');
+      return { success: true };
+    }
+  }
+
+  if (method === 'PATCH') {
+    if (pathname.startsWith('/institutions/')) {
+      const id = pathname.split('/')[2];
+      const updates = JSON.parse(init?.body as string);
+      const inst = db.institutions.find(i => i.id === id);
+      if (inst) {
+        Object.assign(inst, updates);
+        return inst;
+      }
+    }
+    if (pathname.startsWith('/decisions/') && pathname.endsWith('/disposition')) {
+      const id = pathname.split('/')[2];
+      const updates = JSON.parse(init?.body as string);
+      return db.updateDecisionDisposition(id, updates.disposition, updates.notes, 'AdminUser');
+    }
+    if (pathname.startsWith('/decisions/') && pathname.endsWith('/recommended-action')) {
+      const id = pathname.split('/')[2];
+      const updates = JSON.parse(init?.body as string);
+      return db.updateDecisionRecommendedAction(id, updates.recommendedAction, updates.notes, 'AdminUser');
+    }
+    if (pathname.startsWith('/decisions/') && pathname.endsWith('/status')) {
+      const id = pathname.split('/')[2];
+      const updates = JSON.parse(init?.body as string);
+      return db.updateDecisionStatus(id, updates.status);
+    }
+    if (pathname.startsWith('/predictions/') && pathname.endsWith('/resolve')) {
+      const id = pathname.split('/')[2];
+      const updates = JSON.parse(init?.body as string);
+      return db.resolvePrediction(id, updates.resolutionStatus, updates.actualOutcome, updates.lessonsLearned);
+    }
+    // More could be added as needed
   }
 
   return { success: true, data: [], items: [] };
@@ -203,16 +287,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('proteus_user', JSON.stringify(nextUser));
   }, [user]);
 
+  const getToken = useCallback(async () => user ? 'mock-token' : '', [user]);
+
   const apiFetch = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
-    const response = await fetch(path, init);
+    const token = await getToken();
+    const headers = new Headers(init?.headers);
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+    if (init?.method && init.method !== 'GET' && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    
+    const response = await fetch(path, { ...init, headers });
     const body = await response.text();
     const contentType = response.headers.get('content-type') || '';
     if (/text\/html/i.test(contentType) || /^\s*<!doctype\s+html/i.test(body)) {
       console.warn(`API request ${init?.method || 'GET'} ${path} returned HTML; using a local development fallback.`);
-      return localFallback(path, (init?.method || 'GET').toUpperCase()) as T;
+      return localFallback(path, (init?.method || 'GET').toUpperCase(), init) as T;
     }
-    return JSON.parse(body) as T;
-  }, []);
+    
+    const parsed = JSON.parse(body);
+    return (parsed && parsed.data !== undefined ? parsed.data : parsed) as T;
+  }, [getToken]);
 
   const hasCapability = useCallback(
     (capability: Capability) => user?.capabilities.includes(capability) ?? false,
@@ -233,9 +330,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loginWithGoogle,
     logout,
     switchTenant,
-    refreshMe: async () => {},
-    reauthenticate: async () => {},
-    getToken: async () => 'mock-token',
+    refreshMe: async () => {
+      const savedUser = readSavedUser();
+      setUser(savedUser);
+    },
+    reauthenticate: async () => {
+      await logout();
+    },
+    getToken,
     apiFetch,
     hasCapability,
     canAcademicSignoff: hasCapability('sign_academic'),
