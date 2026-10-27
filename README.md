@@ -1,6 +1,26 @@
 # Proteus
 
-Institutional AI governance, scenario modeling, and strategic decision platform for higher education.
+**The Higher Education AI Compass: Strategic Governance Operating System**
+
+Proteus is a governance platform that helps universities navigate the AI age through structured decision-making, stakeholder collaboration, and constitutional-level ethical reasoning. It is built around the principle that *human flourishing is the objective — AI is neither the objective nor the enemy.*
+
+## Core Philosophy
+
+Proteus is governed by the **Higher Education AI Compass Master Kernel** — a 30-section constitutional framework and 12-point Final Test designed to evaluate any AI initiative through the lens of human agency, academic integrity, equity, and institutional autonomy.
+
+The system's **one-sentence mission**:
+> *Use AI to help higher education understand change, imagine alternatives, improve its practices, and expand human possibility — but never allow technological capability, institutional efficiency, commercial interest, or algorithmic prediction to become a substitute for human judgment, democratic deliberation, academic freedom, institutional autonomy, or the common good.*
+
+## Key Capabilities
+
+- **Compass Master**: A 30-section operating framework with 12 Final Tests for evaluating AI proposals.
+- **Scenario Engine**: Simulated AI deployment decisions with recorded human dispositions from 6 stakeholder personas.
+- **Evidence Ledger**: Source-verified evidence claims with confidence tiers, staging review, and audit trails.
+- **Stakeholder Simulation**: Six institutional roles (President, Provost, Faculty Chair, Student Body President, Union Rep, Accreditor Consultant) with distinct privileges and perspectives.
+- **Red-Flag Library**: Catalog of AI implementation risks with mitigation guidance.
+- **Shadow AI Reporting**: Grassroots mechanism for faculty and students to report unapproved AI tools.
+- **Prediction Tracker**: Living record of AI outcome predictions with reconciliation workflows.
+- **Governance Jobs**: Automated compliance scanning, red-flag detection, and kernel evaluation runs.
 
 ## Features
 - Executive governance, institutional profiles, and overlay compliance packs.
