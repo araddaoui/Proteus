@@ -79,11 +79,23 @@ function ProteusRoot() {
 
   return (
     <>
-      {view === 'landing' && <LandingPageView onOpenAuthModal={() => setIsAuthModalOpen(true)} />}
+      {view === 'landing' && (
+        <LandingPageView
+          onOpenAuthModal={() => setIsAuthModalOpen(true)}
+          onReturnToWorkspace={() => setView('workspace')}
+          onExit={logout}
+          isLoggedIn={isLoggedIn}
+          currentUser={user}
+        />
+      )}
 
       {view === 'workspace' &&
         (user ? (
-          <Workspace onOpenAuthModal={() => setIsAuthModalOpen(true)} onReturnToLanding={() => setView('landing')} />
+          <Workspace
+            onOpenAuthModal={() => setIsAuthModalOpen(true)}
+            onReturnToLanding={() => setView('landing')}
+            onExit={logout}
+          />
         ) : (
           <div className="flex min-h-screen items-center justify-center bg-slate-900 p-6 text-slate-100">
             <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-800 p-8 text-center">
@@ -130,7 +142,15 @@ async function optional<T>(promise: Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-function Workspace({ onOpenAuthModal, onReturnToLanding }: { onOpenAuthModal: () => void; onReturnToLanding: () => void }) {
+function Workspace({
+  onOpenAuthModal,
+  onReturnToLanding,
+  onExit,
+}: {
+  onOpenAuthModal: () => void;
+  onReturnToLanding: () => void;
+  onExit: () => void;
+}) {
   const {
     user,
     apiFetch,
@@ -611,6 +631,7 @@ function Workspace({ onOpenAuthModal, onReturnToLanding }: { onOpenAuthModal: ()
         currentRole={currentRole}
         onOpenAuthModal={onOpenAuthModal}
         onReturnToLanding={onReturnToLanding}
+        onExit={onExit}
         currentTenantId={currentTenantId}
         setCurrentTenantId={switchTenant}
         institutions={allInstitutions}

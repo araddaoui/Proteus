@@ -1,7 +1,7 @@
 import React from 'react';
 import { UserRole, Institution, OverlayPack } from '../types';
 import type { Capability } from '../types/auth';
-import { ShieldCheck, Compass, Users, Building2, AlertTriangle, Layers, BookOpen, RotateCcw } from 'lucide-react';
+import { ShieldCheck, Compass, Users, Building2, AlertTriangle, Layers, BookOpen, RotateCcw, LogOut, ArrowLeft } from 'lucide-react';
 
 interface HeaderProps {
   currentRole: UserRole;
@@ -12,6 +12,7 @@ interface HeaderProps {
   // design — two controls that can disagree about who you are.
   onOpenAuthModal: () => void;
   onReturnToLanding?: () => void;
+  onExit?: () => void;
   currentTenantId: string;
   setCurrentTenantId: (id: string) => void;
   institutions: Institution[];
@@ -29,6 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentRole,
   onOpenAuthModal,
   onReturnToLanding,
+  onExit,
   currentTenantId,
   setCurrentTenantId,
   institutions,
@@ -155,8 +157,30 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenAuthModal}
             className="text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg transition"
           >
-            Account
+            Switch Persona
           </button>
+
+          {onReturnToLanding && (
+            <button
+              onClick={onReturnToLanding}
+              title="Return to the Proteus Landing Page"
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-200 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg transition"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Landing Page</span>
+            </button>
+          )}
+
+          {onExit && (
+            <button
+              onClick={onExit}
+              title="Exit workspace and sign out"
+              className="flex items-center gap-1.5 text-xs font-semibold text-rose-300 hover:text-rose-100 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 px-3 py-1.5 rounded-lg transition"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Exit</span>
+            </button>
+          )}
 
           {canResetDemo && onResetDemo && (
             <button
